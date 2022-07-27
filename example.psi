@@ -1,0 +1,67 @@
+#[global_whitespace]
+ws: " "
+  | "\t"
+  | "\n"
+  | "\r"
+
+#[consume_all]
+start: expr
+
+
+#[precedence = 30]
+expr: "-" expr
+    | expr
+
+#[precedence = 20]
+expr: expr "+" expr
+    | expr "-" expr
+    | expr
+
+#[precedence = 10]
+expr: expr "*" expr
+    | expr "/" expr
+    | expr
+ 
+#[precedence = 0] // default
+expr: number
+    | "(" expr ")"
+
+#[no_whitespace]
+#[no_comment]
+{   
+    number: digit_nonzero digits
+          | zero
+
+    digit_nonzero: "1".."9"
+    zero: "0"
+    digit: zero | digit_nonzero
+
+    digits: _
+          | digit digits
+
+}
+
+
+
+
+
+
+
+
+
+//## THIS IS IT!!!
+2 + 3 * 8
+
+expr: expr_30
+
+expr_30: "-" expr
+       | expr_20
+
+expr_20: expr_10 "+" expr
+       | expr_10 "-" expr
+       | expr_10
+
+expr_10: expr_0 "*" expr
+       | expr_0 "/" expr
+       | expr_0
+##//
