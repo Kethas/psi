@@ -51,17 +51,18 @@ expr: number
 
 //## THIS IS IT!!!
 2 + 3 * 8
+8 * 3 + 2
 
 expr: expr_30
 
-expr_30: "-" expr
+expr_30: "-" expr_30
        | expr_20
 
-expr_20: expr_10 "+" expr
-       | expr_10 "-" expr
+expr_20: expr_10 "+" expr_20
+       | expr_10 "-" expr_20
        | expr_10
 
-expr_10: expr_0 "*" expr
-       | expr_0 "/" expr
+expr_10: expr_0 "*" expr_10
+       | expr_0 "/" expr_10
        | expr_0
 ##//

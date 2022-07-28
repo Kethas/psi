@@ -107,27 +107,43 @@ mod input {
 
 mod grammar {
     use crate::utils::*;
-    use std::{collections::HashMap, cmp::Ordering, vec};
+    use std::{
+        cmp::Ordering,
+        collections::HashMap,
+        default::{self, default},
+        vec,
+    };
 
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Debug, PartialEq, Eq)]
     pub enum RulePart {
         Empty,
         Literal(String),
         Rule(String),
     }
 
-    #[derive(Clone, Debug)]
+    //TODO: maybe flatten this into just a vec, as it seems unecessary at this point to have 
+    // attributes for a single definition when a group of defitnitions can be a group of one
+    #[derive(Clone, Debug, PartialEq, Eq)]
     pub struct RuleDef {
         pub parts: Vec<RulePart>,
     }
 
-    #[derive(Clone, Debug)]
+    #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+    pub enum Associativity {
+        #[default]
+        Left,
+        Right,
+        None,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
     pub struct RuleEntry {
         pub definitions: Vec<RuleDef>,
         pub precedence: u64,
+        // pub associativity: Associativity,
     }
 
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Debug, PartialEq, Eq)]
     pub struct Rules {
         rules: HashMap<String, Vec<RuleEntry>>,
     }
@@ -139,6 +155,8 @@ mod grammar {
         uncyclic rules are finite and can have a size (priority) calculated
         literals have a priority equal to their size
         empty is the lowest priority
+
+    TODO: proper priotisation
     */
 
     impl Rules {
@@ -148,7 +166,7 @@ mod grammar {
             }
         }
 
-        pub fn flattened(self) -> FlattenedRules {
+        pub(crate) fn flattened(self) -> FlattenedRules {
             let mut rules: HashMap<String, HashMap<u64, Vec<Vec<RulePart>>>> = HashMap::new();
 
             for (name, rule_entries) in self.rules {
@@ -188,10 +206,39 @@ mod grammar {
                 if precedences.len() == 0 {
                     continue;
                 } else if precedences.len() == 1 {
-                    //TODO
+                    let v = match out.get_mut(&name) {
+                        Some(v) => v,
+                        None => {
+                            out.insert(name.clone(), Vec::new());
+                            out.get_mut(&name).unwrap()
+                        }
+                    };
+
+                    for (_, rule) in precedences {
+                        v.extend(rule);
+                    }
+
                     continue;
                 }
 
+                // rule: rule_max
+                let highest_precedence = precedences.keys().copied().fold(0, u64::max);
+                let v = match out.get_mut(&name) {
+                    Some(v) => v,
+                    None => {
+                        out.insert(name.clone(), Vec::new());
+                        out.get_mut(&name).unwrap()
+                    }
+                };
+                v.push(vec![
+                    RulePart::Rule(format!("{name}@{highest_precedence}")),
+                    RulePart::Empty,
+                ]);
+
+                // left assoc
+                // rule_x: rule_x-1 rule_x...
+                // right assoc would be `rule_x: rule_x... rule_x-1` but i haveent implemented left recursion yet
+                // nonassoc would be `rule_x: rule_x-1...`
                 let all_precedences = precedences.keys().copied().collect::<Vec<_>>();
                 for (precedence, rules) in precedences {
                     let prec_name = format!("{name}@{precedence}");
@@ -206,15 +253,42 @@ mod grammar {
                         if rule.is_empty() {
                             out_rule.push(RulePart::Empty)
                         } else {
-                            //TODO
+                            out_rule = rule;
+                            if let Some(part) = out_rule.first_mut() {
+                                match part {
+                                    RulePart::Rule(n) if n == &name => *n = next_prec.clone(),
+                                    _ => {}
+                                }
+
+                                drop(part);
+
+                                for part in &mut out_rule[1..] {
+                                    match part {
+                                        RulePart::Rule(n) if n == &name => *n = prec_name.clone(),
+                                        _ => {}
+                                    }
+                                }
+                            }
                         }
 
-                        //TODO
+                        let v = match out.get_mut(&prec_name) {
+                            Some(v) => v,
+                            None => {
+                                out.insert(prec_name.clone(), Vec::new());
+                                out.get_mut(&prec_name).unwrap()
+                            }
+                        };
+
+                        v.push(out_rule);
                     }
                 }
             }
 
-            todo!()
+            FlattenedRules::from_rules(out)
+        }
+
+        pub fn into_grammar(self) -> Grammar {
+            self.flattened().into_grammar()
         }
     }
 
@@ -225,7 +299,8 @@ mod grammar {
     }
     use RuleType::*;
 
-    struct FlattenedRules {
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub(crate) struct FlattenedRules {
         rules: HashMap<String, Vec<Vec<RulePart>>>,
         rule_types: HashMap<String, RuleType>,
     }
@@ -317,7 +392,7 @@ mod grammar {
                 last_state = state;
             }
 
-            for (name, ty) in &mut self.rule_types  {
+            for (name, ty) in &mut self.rule_types {
                 match ty {
                     Acyclic(x) if *x == usize::MAX => {
                         println!("{name} is unset acyclic. resetting to zero.");
@@ -331,10 +406,7 @@ mod grammar {
         // if a child is zero, then it is zero, otherwise it is the highest child
         // a rule is the sum of its parts
         // base is guaranteed to be Acyclic
-        fn compute_size(
-            &mut self,
-            base: &str,
-        ) -> Option<usize> {
+        fn compute_size(&mut self, base: &str) -> Option<usize> {
             let mut largest_child = 0;
 
             for rules in self.rules.get(base) {
@@ -342,15 +414,15 @@ mod grammar {
                     let mut rule_size = 0;
                     for part in rule {
                         match part {
-                            RulePart::Empty => {},
+                            RulePart::Empty => {}
                             RulePart::Literal(lit) => rule_size += lit.chars().count(),
                             RulePart::Rule(name) => {
                                 let size = self.get_rules_priority(name)?;
                                 if size == usize::MAX {
-                                    return None
+                                    return None;
                                 }
                                 rule_size += size
-                            },
+                            }
                         }
                     }
 
@@ -358,7 +430,7 @@ mod grammar {
                         largest_child = rule_size;
                     }
                 }
-            };
+            }
 
             Some(largest_child)
         }
@@ -377,7 +449,7 @@ mod grammar {
                 RulePart::Rule(name) => self.get_rules_priority(name),
             }
         }
-        
+
         pub fn get_rule_priority(&self, rule: &[RulePart]) -> Option<usize> {
             let mut size = 0;
 
@@ -387,7 +459,7 @@ mod grammar {
 
             Some(size)
         }
-    
+
         pub fn cmp_rule(&self, r1: &[RulePart], r2: &[RulePart]) -> Option<Ordering> {
             let a = self.get_rule_priority(r1)?;
             let b = self.get_rule_priority(r2)?;
@@ -404,11 +476,15 @@ mod grammar {
                 } else {
                     let first = &rule[0];
                     let rest = &rule[1..];
-                    
+
                     match first {
                         RulePart::Empty => RuleTree::End,
-                        RulePart::Literal(lit) => RuleTree::Lit(lit.clone(), [vec_to_tree(rest)].into_boxed_slice()),
-                        RulePart::Rule(name) => RuleTree::Rul(name.clone(), [vec_to_tree(rest)].into_boxed_slice()),
+                        RulePart::Literal(lit) => {
+                            RuleTree::Lit(lit.clone(), [vec_to_tree(rest)].into_boxed_slice())
+                        }
+                        RulePart::Rule(name) => {
+                            RuleTree::Rul(name.clone(), [vec_to_tree(rest)].into_boxed_slice())
+                        }
                     }
                 }
             }
@@ -420,7 +496,7 @@ mod grammar {
                         None => {
                             out.insert(name.to_owned(), vec![]);
                             out.get_mut(name).unwrap()
-                        },
+                        }
                     };
 
                     v.push(vec_to_tree(rule))
@@ -429,13 +505,14 @@ mod grammar {
 
             todo!("smush");
 
-            out.into_iter().map(|(name, vec)| (name, vec.into_boxed_slice())).collect()
+            out.into_iter()
+                .map(|(name, vec)| (name, vec.into_boxed_slice()))
+                .collect()
         }
 
         pub fn into_grammar(self) -> Grammar {
             Grammar::new(self.into_rule_trees())
         }
-
     }
 
     #[derive(Clone, Debug, PartialEq, Eq)]
@@ -470,6 +547,66 @@ mod grammar {
 
         pub fn add_rule(&mut self, k: impl Into<String>, tree: impl IntoBoxs<RuleTree>) {
             self.rules.insert(k.into(), tree.into_boxed_slice());
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        fn aaab_rules() -> Rules {
+            use RulePart::*;
+            Rules::new([
+                (
+                    "start".to_owned(),
+                    vec![RuleEntry {
+                        definitions: vec![RuleDef {
+                            parts: vec![Rule("A".to_owned())],
+                        }],
+                        precedence: 0,
+                    }],
+                ),
+                (
+                    "A".to_owned(),
+                    vec![RuleEntry {
+                        definitions: vec![
+                            RuleDef {
+                                parts: vec![Literal("b".to_owned())],
+                            },
+                            RuleDef {
+                                parts: vec![Literal("a".to_owned()), Rule("A".to_owned())],
+                            },
+                        ],
+                        precedence: 0,
+                    }],
+                ),
+            ])
+        }
+
+        fn aaab_flattened_rules() -> FlattenedRules {
+            use RulePart::*;
+            use RuleType::*;
+            FlattenedRules::new(
+                [
+                    ("start".to_owned(), vec![vec![Rule("A".to_owned())]]),
+                    (
+                        "A".to_owned(),
+                        vec![
+                            vec![Literal("b".to_owned())],
+                            vec![Literal("a".to_owned()), Rule("A".to_owned())],
+                        ],
+                    ),
+                ],
+                [("start".to_owned(), Acyclic(0)), ("A".to_owned(), Cyclic)],
+            )
+        }
+
+        #[test]
+        fn test_flattening_0() {
+            let rules = aaab_rules();
+            let flattened_rules = aaab_flattened_rules();
+
+            assert_eq!(flattened_rules, rules.flattened());
         }
     }
 }
@@ -620,10 +757,9 @@ mod rule {
 
     #[cfg(test)]
     mod tests {
-        use crate::{
-            input::CharsInput,
-            utils::{IntoBoxs},
-        };
+        use std::vec;
+
+        use crate::{input::CharsInput, utils::IntoBoxs};
 
         use super::*;
 
@@ -738,8 +874,108 @@ mod psi_macro {
 
 #[cfg(test)]
 mod tests {
+    use std::vec;
+
+    use crate::grammar::{Grammar, RuleDef, RuleEntry, RulePart, Rules};
+
+    fn compile_expr_grammar() -> Grammar {
+        let rules = Rules::new([
+            (
+                "start".to_owned(),
+                vec![RuleEntry {
+                    definitions: vec![RuleDef {
+                        parts: vec![RulePart::Rule("expr".to_owned())],
+                    }],
+                    precedence: 0,
+                }],
+            ),
+            (
+                "expr".to_owned(),
+                vec![
+                    RuleEntry {
+                        precedence: 30,
+                        definitions: vec![
+                            RuleDef {
+                                parts: vec![
+                                    RulePart::Literal("-".to_owned()),
+                                    RulePart::Rule("expr".to_owned()),
+                                ],
+                            },
+                            RuleDef {
+                                parts: vec![RulePart::Rule("expr".to_owned())],
+                            },
+                        ],
+                    },
+                    RuleEntry {
+                        definitions: vec![
+                            RuleDef {
+                                parts: vec![
+                                    RulePart::Rule("expr".to_owned()),
+                                    RulePart::Literal("+".to_owned()),
+                                    RulePart::Rule("expr".to_owned()),
+                                ],
+                            },
+                            RuleDef {
+                                parts: vec![
+                                    RulePart::Rule("expr".to_owned()),
+                                    RulePart::Literal("-".to_owned()),
+                                    RulePart::Rule("expr".to_owned()),
+                                ],
+                            },
+                            RuleDef {
+                                parts: vec![RulePart::Rule("expr".to_owned())],
+                            },
+                        ],
+                        precedence: 20,
+                    },
+                    RuleEntry {
+                        definitions: vec![
+                            RuleDef {
+                                parts: vec![
+                                    RulePart::Rule("expr".to_owned()),
+                                    RulePart::Literal("*".to_owned()),
+                                    RulePart::Rule("expr".to_owned()),
+                                ],
+                            },
+                            RuleDef {
+                                parts: vec![
+                                    RulePart::Rule("expr".to_owned()),
+                                    RulePart::Literal("/".to_owned()),
+                                    RulePart::Rule("expr".to_owned()),
+                                ],
+                            },
+                            RuleDef {
+                                parts: vec![RulePart::Rule("expr".to_owned())],
+                            },
+                        ],
+                        precedence: 10,
+                    },
+                    RuleEntry {
+                        definitions: vec![
+                            RuleDef {
+                                parts: vec![
+                                    RulePart::Literal("x".to_owned()),
+                                ],
+                            },
+                            RuleDef {
+                                parts: vec![
+                                    RulePart::Literal("(".to_owned()),
+                                    RulePart::Rule("expr".to_owned()),
+                                    RulePart::Literal(")".to_owned()),
+                                ],
+                            },
+                        ],
+                        precedence: 0,
+                    },
+                ],
+            ),
+        ]);
+
+        rules.into_grammar()
+    }
+
     #[test]
-    fn test_0() {
+    fn test_expr_0() {
         println!("works!")
     }
 }
