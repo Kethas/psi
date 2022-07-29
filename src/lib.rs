@@ -31,6 +31,7 @@ mod utils {
     impl<T> RefVoid for T {}
 }
 
+//TODO: expand input types and optimize their cloning efficiency
 mod input {
     use std::ops::Range;
 
@@ -105,23 +106,19 @@ mod input {
     }
 }
 
+//TODO: split into grammar and rules, maybe grammar > rules with pub use Rules
 mod grammar {
     use crate::utils::*;
-    use std::{
-        cmp::Ordering,
-        collections::HashMap,
-        default::{self, default},
-        vec,
-    };
+    use std::{cmp::Ordering, collections::HashMap, vec};
 
     #[derive(Clone, Debug, PartialEq, Eq)]
     pub enum RulePart {
-        Empty,
+        Empty, // this can be removed, if verified it is not needed, ie can be replaced by [] or nothing
         Literal(String),
         Rule(String),
     }
 
-    //TODO: maybe flatten this into just a vec, as it seems unecessary at this point to have 
+    //TODO: maybe flatten this into just a vec, as it seems unecessary at this point to have
     // attributes for a single definition when a group of defitnitions can be a group of one
     #[derive(Clone, Debug, PartialEq, Eq)]
     pub struct RuleDef {
@@ -467,6 +464,65 @@ mod grammar {
             a.partial_cmp(&b)
         }
 
+        pub fn cmp_rule_part(&self, rp1: &RulePart, rp2: &RulePart) -> Option<Ordering> {
+            match (rp1, rp2) {
+                // for two literals compare their priority
+                (rp1 @ RulePart::Literal(_), rp2 @ RulePart::Literal(_)) => Some(
+                    self.get_rule_part_priority(rp1)?
+                        .cmp(&self.get_rule_part_priority(rp2)?),
+                ),
+                // a literal is more important than a rule or an empty
+                (rp1 @ RulePart::Literal(_), rp2) => Some(Ordering::Greater),
+
+                // a rule and another rule: compare their priorities
+                (RulePart::Rule(r1), RulePart::Rule(r2)) => Some(
+                    self.get_rules_priority(r1)?
+                        .cmp(&self.get_rules_priority(r2)?),
+                ),
+
+                // a rule is higher than an empty
+                (RulePart::Rule(_), RulePart::Empty) => Some(Ordering::Greater),
+
+                // an empty is equal to an empty
+                (RulePart::Empty, RulePart::Empty) => Some(Ordering::Equal),
+
+                // if no thingy yet then  a `cmp` b = b `cmp` a
+                (a, b) => self.cmp_rule_part(b, a),
+            }
+        }
+
+        pub fn cmp_rule_tree(&self, rt1: &RuleTree, rt2: &RuleTree) -> Option<Ordering> {
+            match (rt1, rt2) {
+                // for two literals compare their length
+                (RuleTree::Lit(lit1, ..), RuleTree::Lit(lit2, ..)) => {
+                    Some(lit1.chars().count().cmp(&lit2.chars().count()))
+                }
+                // a literal is more important than a rule or an end
+                (RuleTree::Lit(..), _) => Some(Ordering::Greater),
+                (_, RuleTree::Lit(..)) => Some(Ordering::Less),
+
+                // a rule and another rule: compare their priorities
+                (RuleTree::Rul(r1, ..), RuleTree::Rul(r2, ..)) => Some(
+                    self.get_rules_priority(r1)?
+                        .cmp(&self.get_rules_priority(r2)?),
+                ),
+
+                // a rule is higher than an end
+                (RuleTree::Rul(..), RuleTree::End) => Some(Ordering::Greater),
+
+                // an end is equal to an end
+                (RuleTree::End, RuleTree::End) => Some(Ordering::Equal),
+
+                // an end is less than anything else
+                (RuleTree::End, _) => Some(Ordering::Less),
+
+
+
+                // if no thingy yet then  a `cmp` b = b `cmp` a
+                //(a, b) => self.cmp_rule_tree(b, a),
+            }
+        }
+
         pub fn into_rule_trees(self) -> HashMap<String, Boxs<RuleTree>> {
             let mut out = HashMap::<String, Vec<_>>::new();
 
@@ -503,11 +559,78 @@ mod grammar {
                 }
             }
 
-            todo!("smush");
+            fn smush(
+                cmp: &impl Fn(&RuleTree, &RuleTree) -> Ordering,
+                nodes: &mut Vec<RuleTree>,
+            ) -> Boxs<RuleTree> {
+                let mut out = Vec::new();
 
-            out.into_iter()
-                .map(|(name, vec)| (name, vec.into_boxed_slice()))
-                .collect()
+                'node: for node in nodes.iter_mut() {
+                    if out.is_empty() {
+                        out.push(node.clone());
+                        continue 'node;
+                    }
+                    // here it means node wasnt added to the rest
+                    out.push(node.clone());
+
+                    for i in 0..out.len() {
+                        if node.equivalent(&out[i]) {
+                            let out_node = &mut out[i];
+
+                            match out_node {
+                                RuleTree::End => {}
+                                RuleTree::Lit(_, rest) | RuleTree::Rul(_, rest) => {
+                                    let mut bs: Boxs<RuleTree> = "a".repeat(rest.len()).chars().map(|_| RuleTree::End).into_boxed_slice();
+                                    bs.swap_with_slice(rest);
+
+                                    let mut v = bs.into_vec();
+
+                                    // merge node chilren into out_children
+                                    match node {
+                                        RuleTree::Lit(_, rest) | RuleTree::Rul(_, rest) => {
+                                            let mut bs: Boxs<RuleTree> = "a".repeat(rest.len()).chars().map(|_| RuleTree::End).into_boxed_slice();
+                                            bs.swap_with_slice(rest);
+                                            v.extend(bs.into_vec().drain(..));
+                                        },
+                                        _ => unreachable!()
+                                    }
+
+
+                                    // smuuuush
+                                    let bs = smush(cmp, &mut v);
+                                    // put the smushed trees back into the out_node.rest
+                                    *rest = bs;
+                                },
+                            }
+
+                            continue 'node;
+                        }
+
+                        match cmp(node, &out[i]) {
+                            Ordering::Greater => {
+                                out.insert(i, node.clone());
+                                continue 'node
+                            }
+
+                            _ => {}
+                        }
+
+                    }
+                    // here it means node wasnt added to the rest
+                    out.push(node.clone());                
+                }
+
+                out.into_boxed_slice()
+            }
+
+            let mut o = HashMap::new();
+
+            for (name, mut bs) in out {
+                
+                o.insert(name, smush(&|a, b| self.cmp_rule_tree(a, b).unwrap(), &mut bs));
+            }
+
+            o
         }
 
         pub fn into_grammar(self) -> Grammar {
@@ -517,6 +640,8 @@ mod grammar {
 
     #[derive(Clone, Debug, PartialEq, Eq)]
     pub enum RuleTree {
+        // these have kinda dumb names, maybe they should be renamed
+
         // represents the end of a parsing tree
         End,
         // represents a literal to be parsed
@@ -525,7 +650,18 @@ mod grammar {
         Rul(String, Boxs<RuleTree>),
     }
 
-    #[derive(Clone, Debug)]
+    impl RuleTree {
+        pub fn equivalent(&self, other: &RuleTree) -> bool {
+            match (self, other) {
+                (RuleTree::End, RuleTree::End) => true,
+                (RuleTree::Lit(a, _), RuleTree::Lit(b, _)) => a == b,
+                (RuleTree::Rul(a, _), RuleTree::Rul(b, _)) => a == b,
+                _ => false,
+            }
+        }
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
     pub struct Grammar {
         rules: HashMap<String, Boxs<RuleTree>>,
     }
@@ -611,7 +747,8 @@ mod grammar {
     }
 }
 
-mod rule {
+//TODO: make a non-recursive parsing function
+mod parse {
     use crate::{grammar::*, input::Input, utils::Boxs};
 
     #[derive(Clone, Debug)]
@@ -757,8 +894,6 @@ mod rule {
 
     #[cfg(test)]
     mod tests {
-        use std::vec;
-
         use crate::{input::CharsInput, utils::IntoBoxs};
 
         use super::*;
@@ -840,7 +975,7 @@ mod rule {
 }
 
 mod psi_macro {
-    use crate::grammar::*;
+    /*use crate::grammar::*;
 
     macro_rules! raw_psi {
         () => {{
@@ -857,6 +992,8 @@ mod psi_macro {
 
         ($rulename:ident) => {};
     }
+
+    */
 
     /*fn ___() {
         raw_psi!{
@@ -876,7 +1013,7 @@ mod psi_macro {
 mod tests {
     use std::vec;
 
-    use crate::grammar::{Grammar, RuleDef, RuleEntry, RulePart, Rules};
+    use crate::{grammar::{Grammar, RuleDef, RuleEntry, RulePart, Rules}, input::CharsInput, parse::Parser};
 
     fn compile_expr_grammar() -> Grammar {
         let rules = Rules::new([
@@ -953,9 +1090,7 @@ mod tests {
                     RuleEntry {
                         definitions: vec![
                             RuleDef {
-                                parts: vec![
-                                    RulePart::Literal("x".to_owned()),
-                                ],
+                                parts: vec![RulePart::Literal("x".to_owned())],
                             },
                             RuleDef {
                                 parts: vec![
@@ -974,8 +1109,40 @@ mod tests {
         rules.into_grammar()
     }
 
+    fn expr_grammar() -> Grammar {
+        Grammar::new([])
+    }
+
     #[test]
     fn test_expr_0() {
-        println!("works!")
+        let compiled_grammar = compile_expr_grammar();
+        //let expected_grammar = expr_grammar();
+
+
+        println!("Compiled Grammar:\n{:#?}", compiled_grammar);
+
+        //assert_eq!(expected_grammar, compiled_grammar);
+
+
+        let input = "x+x*x+x".chars();
+        //let result = 1 + 3 * 8 + 2;
+
+        let mut parser = Parser::<CharsInput>::new(input);
+
+        let result = parser.parse(&compiled_grammar);
+
+        if let Err(e) = result {
+            eprintln!("ParseError:\n{:#?}", e);
+            panic!("Error encountered while parsing.");
+        }
+
+        let result = result.unwrap();
+        
+        println!("Parsed:\n{:#?}", result);
+
+        // fail on purpose to see output
+        //assert!(false);
+
+        // great success! wawaweewa!
     }
 }
