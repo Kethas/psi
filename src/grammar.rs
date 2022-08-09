@@ -18,9 +18,9 @@ pub enum RulePart {
 }
 
 #[dyn_clonable::clonable]
-pub trait RuleTransformer: Clone + Fn(ParseTree) -> ParseObject {}
+pub trait RuleTransformer: Clone + Fn(ParseObject) -> ParseObject {}
 
-impl<T> RuleTransformer for T where T: Clone + Fn(ParseTree) -> ParseObject {}
+impl<T> RuleTransformer for T where T: Clone + Fn(ParseObject) -> ParseObject {}
 
 #[derive(Clone)]
 pub struct RuleAction {
@@ -31,7 +31,7 @@ pub struct RuleAction {
 impl Default for RuleAction {
     fn default() -> Self {
         Self {
-            inner: Arc::new(|x| ParseObject::ParseTree(x)),
+            inner: Arc::new(|x| x),
             id: Uuid::nil(),
         }
     }
@@ -52,7 +52,7 @@ impl PartialEq for RuleAction {
 impl Eq for RuleAction {}
 
 impl RuleAction {
-    pub fn apply(&self, input: ParseTree) -> ParseObject {
+    pub fn apply(&self, input: ParseObject) -> ParseObject {
         (self.inner)(input)
     }
 }
@@ -144,7 +144,7 @@ impl Rules {
             v.pop().unwrap_or(0)
         }
 
-        let mut out: HashMap<String, Vec<Vec<RulePart>>> = HashMap::new();
+        let mut out: HashMap<String, Vec<(Vec<RulePart>, RuleAction)>> = HashMap::new();
 
         for (name, precedences) in rules {
             if precedences.len() == 0 {
@@ -161,7 +161,7 @@ impl Rules {
                 for (_, entries) in precedences {
                     for entry in entries {
                         for rule in entry.definitions {
-                            v.push(rule.parts);
+                            v.push((rule.parts, rule.action));
                         }
                     }
                 }
@@ -178,10 +178,13 @@ impl Rules {
                     out.get_mut(&name).unwrap()
                 }
             };
-            v.push(vec![
-                RulePart::Rule(format!("{name}@{highest_precedence}")),
-                RulePart::Empty,
-            ]);
+            v.push((
+                vec![
+                    RulePart::Rule(format!("{name}@{highest_precedence}")),
+                    RulePart::Empty,
+                ],
+                RuleAction::default(),
+            ));
 
             // left assoc
             // rule_x: rule_x-1 rule_x...
@@ -208,19 +211,26 @@ impl Rules {
 
                     for def in entry.definitions {
                         if def.parts.is_empty() {
-                            v.push(vec![RulePart::Empty]);
+                            v.push((vec![RulePart::Empty], def.action));
                             continue;
                         }
 
                         let len = def.parts.len();
 
-                        v.push(
+                        v.push((
                             def.parts
                                 .into_iter()
                                 .enumerate()
-                                .map(assoc_applier(len, assoc, name.clone(), prec_name.clone(), next_prec.clone()))
+                                .map(assoc_applier(
+                                    len,
+                                    assoc,
+                                    name.clone(),
+                                    prec_name.clone(),
+                                    next_prec.clone(),
+                                ))
                                 .collect(),
-                        )
+                            def.action,
+                        ))
                     }
                 }
             }
@@ -248,7 +258,7 @@ fn assoc_applier(
             RulePart::Rule(r) if r == name => RulePart::Rule(next_prec.clone()),
             x => x,
         },
-        Associativity::Left => match rule_part { 
+        Associativity::Left => match rule_part {
             RulePart::Rule(r) if r == name => RulePart::Rule(prec_name.clone()),
             x => x,
         },
@@ -262,7 +272,7 @@ fn assoc_applier(
             RulePart::Rule(r) if r == name => RulePart::Rule(prec_name.clone()),
             x => x,
         },
-        
+
         // rule_x: rule_x-1...
         Associativity::None => match rule_part {
             RulePart::Rule(r) if r == name => RulePart::Rule(next_prec.clone()),
@@ -281,13 +291,13 @@ use RuleType::*;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct FlattenedRules {
-    rules: HashMap<String, Vec<Vec<RulePart>>>,
+    rules: HashMap<String, Vec<(Vec<RulePart>, RuleAction)>>,
     rule_types: HashMap<String, RuleType>,
 }
 
 impl FlattenedRules {
     pub fn new(
-        rules: impl Into<HashMap<String, Vec<Vec<RulePart>>>>,
+        rules: impl Into<HashMap<String, Vec<(Vec<RulePart>, RuleAction)>>>,
         rule_types: impl Into<HashMap<String, RuleType>>,
     ) -> Self {
         Self {
@@ -296,7 +306,7 @@ impl FlattenedRules {
         }
     }
 
-    pub fn from_rules(rules: impl Into<HashMap<String, Vec<Vec<RulePart>>>>) -> Self {
+    pub fn from_rules(rules: impl Into<HashMap<String, Vec<(Vec<RulePart>, RuleAction)>>>) -> Self {
         let mut rules = Self::new(rules, []);
         rules.analyse_cycles();
         rules.compute_sizes();
@@ -305,7 +315,7 @@ impl FlattenedRules {
 
     pub fn analyse_cycles(&mut self) {
         fn analyse_cycle(
-            all_rules: &HashMap<String, Vec<Vec<RulePart>>>,
+            all_rules: &HashMap<String, Vec<(Vec<RulePart>, RuleAction)>>,
             current: &str,
             name: &str,
             history: &mut Vec<String>,
@@ -313,7 +323,7 @@ impl FlattenedRules {
             history.push(current.to_owned());
 
             for rules in all_rules.get(current) {
-                for rule in rules {
+                for (rule, _) in rules {
                     for rule_part in rule {
                         match rule_part {
                             RulePart::Rule(n) if n == name => return true,
@@ -390,7 +400,7 @@ impl FlattenedRules {
         let mut largest_child = 0;
 
         for rules in self.rules.get(base) {
-            for rule in rules {
+            for (rule, _) in rules {
                 let mut rule_size = 0;
                 for part in rule {
                     match part {
@@ -491,13 +501,13 @@ impl FlattenedRules {
             ),
 
             // a rule is higher than an end
-            (RuleTree::Rul(..), RuleTree::End) => Some(Ordering::Greater),
+            (RuleTree::Rul(..), RuleTree::End(..)) => Some(Ordering::Greater),
 
             // an end is equal to an end
-            (RuleTree::End, RuleTree::End) => Some(Ordering::Equal),
+            (RuleTree::End(..), RuleTree::End(..)) => Some(Ordering::Equal),
 
             // an end is less than anything else
-            (RuleTree::End, _) => Some(Ordering::Less),
+            (RuleTree::End(..), _) => Some(Ordering::Less),
             // if no thingy yet then  a `cmp` b = b `cmp` a
             //(a, b) => self.cmp_rule_tree(b, a),
         }
@@ -506,27 +516,27 @@ impl FlattenedRules {
     pub fn into_rule_trees(self) -> HashMap<String, Boxs<RuleTree>> {
         let mut out = HashMap::<String, Vec<_>>::new();
 
-        fn vec_to_tree(rule: &[RulePart]) -> RuleTree {
+        fn vec_to_tree(rule: &[RulePart], action: RuleAction) -> RuleTree {
             if rule.is_empty() {
-                return RuleTree::End;
+                return RuleTree::End(action);
             } else {
                 let first = &rule[0];
                 let rest = &rule[1..];
 
                 match first {
-                    RulePart::Empty => RuleTree::End,
+                    RulePart::Empty => RuleTree::End(action),
                     RulePart::Literal(lit) => {
-                        RuleTree::Lit(lit.clone(), [vec_to_tree(rest)].into_boxed_slice())
+                        RuleTree::Lit(lit.clone(), [vec_to_tree(rest, action)].into_boxed_slice())
                     }
                     RulePart::Rule(name) => {
-                        RuleTree::Rul(name.clone(), [vec_to_tree(rest)].into_boxed_slice())
+                        RuleTree::Rul(name.clone(), [vec_to_tree(rest, action)].into_boxed_slice())
                     }
                 }
             }
         }
 
         for (name, rules) in &self.rules {
-            for rule in rules {
+            for (rule, action) in rules {
                 let v = match out.get_mut(name) {
                     Some(v) => v,
                     None => {
@@ -535,7 +545,7 @@ impl FlattenedRules {
                     }
                 };
 
-                v.push(vec_to_tree(rule))
+                v.push(vec_to_tree(rule, action.clone()))
             }
         }
 
@@ -556,12 +566,12 @@ impl FlattenedRules {
                         let out_node = &mut out[i];
 
                         match out_node {
-                            RuleTree::End => {}
+                            RuleTree::End(_) => {}
                             RuleTree::Lit(_, rest) | RuleTree::Rul(_, rest) => {
                                 let mut bs: Boxs<RuleTree> = "a"
                                     .repeat(rest.len())
                                     .chars()
-                                    .map(|_| RuleTree::End)
+                                    .map(|_| RuleTree::End(RuleAction::default()))
                                     .into_boxed_slice();
                                 bs.swap_with_slice(rest);
 
@@ -573,7 +583,7 @@ impl FlattenedRules {
                                         let mut bs: Boxs<RuleTree> = "a"
                                             .repeat(rest.len())
                                             .chars()
-                                            .map(|_| RuleTree::End)
+                                            .map(|_| RuleTree::End(RuleAction::default()))
                                             .into_boxed_slice();
                                         bs.swap_with_slice(rest);
                                         v.extend(bs.into_vec().drain(..));
@@ -629,7 +639,7 @@ pub enum RuleTree {
     // these have kinda dumb names, maybe they should be renamed
 
     // represents the end of a parsing tree
-    End,
+    End(RuleAction),
     // represents a literal to be parsed
     Lit(String, Boxs<RuleTree>),
     // represents a rule to be parsed
@@ -639,7 +649,7 @@ pub enum RuleTree {
 impl RuleTree {
     pub fn equivalent(&self, other: &RuleTree) -> bool {
         match (self, other) {
-            (RuleTree::End, RuleTree::End) => true,
+            (RuleTree::End(x), RuleTree::End(y)) => x == y,
             (RuleTree::Lit(a, _), RuleTree::Lit(b, _)) => a == b,
             (RuleTree::Rul(a, _), RuleTree::Rul(b, _)) => a == b,
             _ => false,
@@ -739,12 +749,18 @@ mod tests {
         use RuleType::*;
         FlattenedRules::new(
             [
-                ("start".to_owned(), vec![vec![Rule("A".to_owned())]]),
+                (
+                    "start".to_owned(),
+                    vec![(vec![Rule("A".to_owned())], RuleAction::default())],
+                ),
                 (
                     "A".to_owned(),
                     vec![
-                        vec![Literal("b".to_owned())],
-                        vec![Literal("a".to_owned()), Rule("A".to_owned())],
+                        (vec![Literal("b".to_owned())], RuleAction::default()),
+                        (
+                            vec![Literal("a".to_owned()), Rule("A".to_owned())],
+                            RuleAction::default(),
+                        ),
                     ],
                 ),
             ],

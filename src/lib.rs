@@ -61,7 +61,7 @@ mod tests {
     use crate::{
         grammar::{Grammar, RuleDef, RuleEntry, RulePart, Rules},
         input::CharsInput,
-        parse::{parsed::ParseTree, Parser},
+        parse::{parsed::{ParseTree, ParseObject}, Parser},
     };
     use std::vec;
 
@@ -282,7 +282,7 @@ mod tests {
                     (digit number);
 
             @prec = 30,
-            expr: ("-" expr),
+            expr: ("-" expr) -> |o| -o.as_list().unwrap().get(1).unwrap().as_f64().unwrap(),
                   expr;
             @prec = 20,
             expr: (expr "+" expr),
@@ -292,49 +292,8 @@ mod tests {
             expr: (expr "*" expr),
                   (expr "/" expr),
                   expr;
-            expr: number,
-                  ("(" expr ")");
-        }
-    }
-
-    fn eval_expr(parsed: &ParseTree) -> f64 {
-        match parsed {
-            ParseTree::End => 0.0,
-
-            ParseTree::Rule(name, inner) if name == "expr@0" => match inner[0].to_string().as_str()
-            {
-                "(" => eval_expr(&inner[1]),
-                num => num.to_string().parse().unwrap(),
-            },
-
-            ParseTree::Rule(name, inner)
-                if inner.len() == 1
-                    && ["expr", "start"]
-                        .iter()
-                        .any(|x| name == x || name.starts_with(&format!("{x}@"))) =>
-            {
-                eval_expr(&inner[0])
-            }
-
-            ParseTree::Rule(name, inner) if name == "expr@30" => -eval_expr(&inner[1]),
-            ParseTree::Rule(name, inner) if name == "expr@20" => {
-                match inner[1].to_string().as_str() {
-                    "+" => eval_expr(&inner[0]) + eval_expr(&inner[2]),
-                    "-" => eval_expr(&inner[0]) - eval_expr(&inner[2]),
-
-                    _ => unreachable!(),
-                }
-            }
-            ParseTree::Rule(name, inner) if name == "expr@10" => {
-                match inner[1].to_string().as_str() {
-                    "*" => eval_expr(&inner[0]) * eval_expr(&inner[2]),
-                    "/" => eval_expr(&inner[0]) / eval_expr(&inner[2]),
-
-                    _ => unreachable!(),
-                }
-            }
-
-            x => panic!("Unreachable: {:#?}", x),
+            expr: number -> |o| Float(o.to_string().parse().unwrap()),
+                  ("(" expr ")") -> |o| o.into_list().unwrap().remove(1);
         }
     }
 
@@ -343,15 +302,12 @@ mod tests {
         let compiled_grammar = compile_expr_grammar();
         let macro_grammar = macro_expr_grammar();
         println!(
-            "compiled:\n{:#?}\nmacro:\n{:#?}\n",
+            "compiled:\n{:?}\nmacro:\n{:?}\n",
             compiled_grammar, macro_grammar
         );
-        assert_eq!(compiled_grammar, macro_grammar);
-        //let expected_grammar = expr_grammar();
+        //assert_eq!(compiled_grammar, macro_grammar);
 
-        println!("Compiled Grammar:\n{:#?}", compiled_grammar);
 
-        //assert_eq!(expected_grammar, compiled_grammar);
 
         let input = "12+33*85+233".chars();
         let expected_result = 12.0 + 33.0 * 85.0 + 233.0;
@@ -369,7 +325,7 @@ mod tests {
 
         println!("Parsed:\n{:#?}", parsed);
 
-        assert_eq!(expected_result, eval_expr(&parsed));
+        assert_eq!(ParseObject::Float(expected_result), parsed);
 
         // great success! wawaweewa!
     }

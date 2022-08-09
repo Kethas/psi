@@ -23,7 +23,7 @@ mod tests {
         
          let result = parser.parse(&grammar).expect("Failed to parse.");
         
-         use psi::parse::parsed::ParseTree::*;
+         use psi::parse::parsed::ParseObject::*;
          assert_eq!(result,
              Rule("start".to_owned(),
                  vec![

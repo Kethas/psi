@@ -1,7 +1,9 @@
 use std::{
     collections::HashMap,
-    fmt::{Debug, Display},
+    fmt::{Debug, Display}, sync::Arc,
 };
+
+use crate::grammar::RuleAction;
 
 #[derive(Clone, PartialEq, Eq)]
 pub enum ParseTree {
@@ -33,28 +35,30 @@ impl Display for ParseTree {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ParseObject {
-    ParseTree(ParseTree),
+    Nothing,
+    Literal(String),
+    Rule(String, Vec<ParseObject>),
     Object(HashMap<String, ParseObject>),
     List(Vec<ParseObject>),
-    String(String),
+    Str(String),
     Int(i64),
     Float(f64),
 }
 
 impl ParseObject {
-    pub fn as_parse_tree(&self) -> Option<&ParseTree> {
-        match self {
-            ParseObject::ParseTree(tree) => Some(tree),
-            _ => None,
-        }
-    }
-
     pub fn as_object(&self) -> Option<&HashMap<String, ParseObject>> {
         match self {
             ParseObject::Object(obj) => Some(obj),
             _ => None,
+        }
+    }
+
+    pub fn into_object(self) -> Option<HashMap<String, ParseObject>> {
+        match self {
+            ParseObject::Object(obj) => Some(obj),
+            _ => None
         }
     }
 
@@ -65,15 +69,35 @@ impl ParseObject {
         }
     }
 
-    pub fn as_string(&self) -> Option<&str> {
+    pub fn into_list(self) -> Option<Vec<ParseObject>> {
         match self {
-            ParseObject::String(str) => Some(str),
+            ParseObject::List(list) => Some(list),
             _ => None,
         }
     }
 
+    pub fn as_string(&self) -> Option<&str> {
+        match self {
+            ParseObject::Str(str) => Some(str),
+            _ => None,
+        }
+    }
+
+    pub fn into_string(self) -> Option<String> {
+        match self {
+            ParseObject::Str(str) => Some(str),
+            _ => None,
+        }
+    }
 
     pub fn as_int(&self) -> Option<i64> {
+        match self {
+            ParseObject::Int(i) => Some(*i),
+            _ => None,
+        }
+    }
+
+    pub fn into_int(&self) -> Option<i64> {
         match self {
             ParseObject::Int(i) => Some(*i),
             _ => None,
@@ -86,12 +110,23 @@ impl ParseObject {
             _ => None,
         }
     }
+
+    pub fn into_float(&self) -> Option<f64> {
+        match self {
+            ParseObject::Float(f) => Some(*f),
+            _ => None,
+        }
+    }
 }
 
 impl From<ParseTree> for ParseObject
 {
     fn from(x: ParseTree) -> Self {
-        ParseObject::ParseTree(x)
+        match x {
+            ParseTree::End => Self::Nothing,
+            ParseTree::Literal(x) => Self::Literal(x) ,
+            ParseTree::Rule(n, v) => Self::Rule(n, v.into_iter().map(ParseObject::from).collect()),
+        }
     }
 }
 
@@ -111,7 +146,7 @@ impl From<Vec<ParseObject>> for ParseObject
 
 impl<'a> From<&'a str> for ParseObject {
     fn from(x: &'a str) -> Self {
-        ParseObject::String(x.to_owned())
+        ParseObject::Str(x.to_owned())
     }
 }
 
@@ -124,5 +159,48 @@ impl From<i64> for ParseObject {
 impl From<f64> for ParseObject {
     fn from(x: f64) -> Self {
         ParseObject::Float(x)
+    }
+}
+
+impl Display for ParseObject {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParseObject::Nothing => f.write_str("nothing"),
+            ParseObject::Literal(lit) => f.write_str(lit),
+            ParseObject::Rule(_, inner) => {
+                for obj in inner {
+                    Display::fmt(obj, f)?;
+                }
+
+                Ok(())
+            },
+            ParseObject::Object(map) => {
+                f.debug_set().entries(map.iter().map(|(k, v)| format!("{k}: {v}"))).finish()
+            },
+            ParseObject::List(v) => {
+                f.debug_list().entries(v.iter().map(|x| x.to_string())).finish()
+            },
+            ParseObject::Str(s) => f.write_fmt(format_args!("\"{s}\"")),
+            ParseObject::Int(i) => f.write_fmt(format_args!("{i}")),
+            ParseObject::Float(n) => f.write_fmt(format_args!("{n}")),
+        }
+    }
+}
+
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TreeBuffer {
+    Literal(String),
+    Rule(String, Vec<TreeBuffer>, RuleAction),
+}
+
+impl TreeBuffer {
+    pub fn transfrom(self) -> ParseObject {
+        match self {
+            TreeBuffer::Literal(lit) => ParseObject::Literal(lit),
+            TreeBuffer::Rule(name, inner, action) => {
+                action.apply(ParseObject::Rule(name, inner.into_iter().map(|x| x.transfrom()).collect()))
+            },
+        }
     }
 }

@@ -1,8 +1,7 @@
-
 use crate::{grammar::*, input::Input, utils::Boxs};
-pub mod parsed;
 
-use parsed::ParseTree;
+pub mod parsed;
+use parsed::*;
 
 #[derive(Clone, Debug)]
 pub enum ParseError {
@@ -18,7 +17,7 @@ pub enum ParseError {
     },
 }
 
-pub type ParseResult = Result<ParseTree, ParseError>;
+pub type ParseResult = Result<ParseObject, ParseError>;
 
 #[derive(Clone, Debug)]
 pub struct Parser<I: Input> {
@@ -33,10 +32,16 @@ impl<I: Input> Parser<I> {
     }
 
     pub fn parse(&mut self, grammar: &Grammar) -> ParseResult {
-        self.parse_rule_by_name(grammar, "start")
+        let tree_buffer = self.parse_rule_by_name(grammar, "start")?;
+
+        Ok(tree_buffer.transfrom())
     }
 
-    pub fn parse_rule_by_name(&mut self, grammar: &Grammar, rule_name: &str) -> ParseResult {
+    pub fn parse_rule_by_name(
+        &mut self,
+        grammar: &Grammar,
+        rule_name: &str,
+    ) -> Result<TreeBuffer, ParseError> {
         let rule = grammar
             .get_rule(rule_name)
             .ok_or_else(|| ParseError::NoSuchRule {
@@ -53,7 +58,7 @@ impl<I: Input> Parser<I> {
         rule: &[RuleTree],
         base: &str,
         depth: usize,
-    ) -> ParseResult {
+    ) -> Result<TreeBuffer, ParseError> {
         let mut errors: Vec<ParseError> = Vec::new();
         for node in rule {
             let mut cloned = self.clone();
@@ -84,9 +89,15 @@ impl<I: Input> Parser<I> {
         node: &RuleTree,
         base: &str,
         depth: usize,
-    ) -> ParseResult {
-        let (val, rest): (ParseTree, &[RuleTree]) = match node {
-            RuleTree::End => return Ok(ParseTree::Rule(base.to_owned(), Vec::new())),
+    ) -> Result<TreeBuffer, ParseError> {
+        let (val, rest): (TreeBuffer, &[RuleTree]) = match node {
+            RuleTree::End(action) => {
+                return Ok(TreeBuffer::Rule(
+                    base.to_owned(),
+                    Vec::new(),
+                    action.clone(),
+                ))
+            }
             RuleTree::Lit(lit, rest) => {
                 let mut i = 0;
                 for c in lit.chars() {
@@ -109,7 +120,7 @@ impl<I: Input> Parser<I> {
                     i += 1;
                 }
 
-                (ParseTree::Literal(lit.clone()), rest)
+                (TreeBuffer::Literal(lit.clone()), rest)
             }
             RuleTree::Rul(name, rest) => {
                 let val = self.parse_rule_by_name(grammar, name)?;
@@ -122,7 +133,7 @@ impl<I: Input> Parser<I> {
 
         match &mut res {
             // push the value into the beginning of the return buffer
-            ParseTree::Rule(name, vals) if name == base => {
+            TreeBuffer::Rule(name, vals, ..) if name == base => {
                 vals.insert(0, val);
             }
             _ => unreachable!(),
@@ -145,19 +156,22 @@ mod tests {
             "start",
             [RuleTree::Rul(
                 "A".to_owned(),
-                [RuleTree::End].into_boxed_slice(),
+                [RuleTree::End(RuleAction::default())].into_boxed_slice(),
             )],
         );
 
         g.add_rule(
             "A",
             [
-                RuleTree::Lit("b".to_owned(), [RuleTree::End].into_boxed_slice()),
+                RuleTree::Lit(
+                    "b".to_owned(),
+                    [RuleTree::End(RuleAction::default())].into_boxed_slice(),
+                ),
                 RuleTree::Lit(
                     "a".to_owned(),
                     [RuleTree::Rul(
                         "A".to_owned(),
-                        [RuleTree::End].into_boxed_slice(),
+                        [RuleTree::End(RuleAction::default())].into_boxed_slice(),
                     )]
                     .into_boxed_slice(),
                 ),
@@ -190,16 +204,16 @@ mod tests {
         let mut b_count = 0;
 
         let parsed = result;
-        fn count_aaab(parsed: &ParseTree, a_count: &mut usize, b_count: &mut usize) {
+        fn count_aaab(parsed: &ParseObject, a_count: &mut usize, b_count: &mut usize) {
             match parsed {
-                ParseTree::End => {}
-                ParseTree::Literal(a) if a == "a" => *a_count += 1,
-                ParseTree::Literal(b) if b == "b" => *b_count += 1,
-                ParseTree::Literal(_) => unreachable!(),
-                ParseTree::Rule(_, inner) => inner
+                ParseObject::Literal(a) if a == "a" => *a_count += 1,
+                ParseObject::Literal(b) if b == "b" => *b_count += 1,
+                ParseObject::Literal(_) => unreachable!(),
+                ParseObject::Rule(_, inner) => inner
                     .iter()
                     .map(|x| count_aaab(x, a_count, b_count))
                     .collect(),
+                _ => {}
             };
         }
 
@@ -210,5 +224,42 @@ mod tests {
 
         // fail on purpose to show stdout
         //assert!(false);
+    }
+
+    fn aaab_actions_grammar() -> Grammar {
+        use crate::psi;
+        use std::sync::{Arc, Mutex};
+
+        let mut a_count = Arc::new(Mutex::new(0));
+        let mut b_count = Arc::new(Mutex::new(0));
+
+        psi! {
+            start: a -> {let (a_count, b_count) = (a_count.clone(), b_count.clone()); move |_| {
+                use ParseObject::*;
+                List(vec![Int(*a_count.lock().unwrap()), Int(*b_count.lock().unwrap())])
+            }};
+
+            a: "b" -> {let b_count = b_count.clone(); move |x| {
+                *b_count.lock().unwrap() += 1;
+                x
+            }},
+               ("a" a) -> {let a_count = a_count.clone(); move |x| {
+                *a_count.lock().unwrap() += 1;
+                x
+            }};
+        }
+    }
+
+    #[test]
+    fn test_aaab_actions() {
+        let source = "aaab".chars();
+        let mut parser = Parser::<CharsInput>::new(source);
+
+        let out = parser.parse(&aaab_actions_grammar()).unwrap();
+
+        use ParseObject::*;
+        
+        assert_eq!(List(vec![Int(3), Int(1)]), out)
+
     }
 }
