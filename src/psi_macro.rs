@@ -127,63 +127,6 @@ macro_rules! rule_entry {
     }};
 }
 
-#[macro_export]
-macro_rules! rules {
-    (
-        $(
-            $(@prec $($assoc:ident)? = $prec:expr,)?
-            $name:ident:
-            $($tok:tt
-                $(-> $action:expr)?
-            ),*
-        );* $(;)?
-    ) => {{
-        use std::collections::HashMap;
-        use $crate::grammar::*;
-
-
-        let rules = vec![
-            $(
-                rule_entry!($(@prec $($assoc)? = $prec,)?
-                            $name:
-                            $(
-                                $tok
-                                $(-> $action)?
-                            ),*
-                            ;
-            )
-            ),*
-        ];
-
-        let mut map: HashMap<String, Vec<RuleEntry>> = HashMap::new();
-
-        for (name, rule_entry) in rules {
-            if map.contains_key(&name) {
-                map.get_mut(&name).unwrap().push(rule_entry);
-            } else {
-                map.insert(name, vec![rule_entry]);
-            }
-        }
-
-        Rules::new(map)
-
-    }};
-
-    // (
-    //     $(
-    //         $(@prec $($assoc:ident)? = $prec:expr,)?
-    //         $name:ident
-    //         $(| $tok:tt
-    //             $(-> $action:expr)?
-    //         )*
-    //         ;
-    //     );* $(;)?
-    // ) => {{
-
-    // }};
-}
-
-pub use rules;
 
 /// This macro can be used to generate a Psi Grammar.
 /// Example:
@@ -224,16 +167,63 @@ pub use rules;
 ///
 /// ```
 #[macro_export]
-macro_rules! psi {
-    ($($tt:tt)*) => {{
+macro_rules! rules {
+    (
+        $(
+            $(@prec $($assoc:ident)? = $prec:expr,)?
+            $name:ident:
+            $($tok:tt
+                $(-> $action:expr)?
+            ),*
+        );* $(;)?
+    ) => {{
+        use std::collections::HashMap;
         use $crate::grammar::*;
 
-        rules! {
-            $($tt)*
-        }.into_grammar()
-    }}
+
+        let rules = vec![
+            $(
+                rule_entry!($(@prec $($assoc)? = $prec,)?
+                            $name:
+                            $(
+                                $tok
+                                $(-> $action)?
+                            ),*
+                            ;
+            )
+            ),*
+        ];
+
+        let mut map: HashMap<String, Vec<RuleEntry>> = HashMap::new();
+
+        for (name, rule_entry) in rules {
+            if map.contains_key(&name) {
+                map.get_mut(&name).unwrap().push(rule_entry);
+            } else {
+                map.insert(name, vec![rule_entry]);
+            }
+        }
+
+        Rules::new(map).into_grammar()
+    }};
+
+    // (
+    //     $(
+    //         $(@prec $($assoc:ident)? = $prec:expr,)?
+    //         $name:ident
+    //         $(| $tok:tt
+    //             $(-> $action:expr)?
+    //         )*
+    //         ;
+    //     );* $(;)?
+    // ) => {{
+
+    // }};
 }
-pub use psi;
+
+pub use rules;
+
+//TODO: add a grammar rule to separate the Rules macro and Grammar macro instead of rules -> Grammar
 
 #[cfg(test)]
 mod tests {
