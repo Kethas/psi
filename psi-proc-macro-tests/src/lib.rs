@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use psi_proc_macro::*;
-    use psilib::grammar::*;
+    use psi::grammar::*;
 
     #[test]
     fn test_psi_rulepart_macro() {

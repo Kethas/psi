@@ -11,14 +11,14 @@ pub enum RulePart {
 }
 
 #[dyn_clonable::clonable]
-trait RuleTransformer: Clone + Fn(ParseTree) -> ParseObject {}
+pub trait RuleTransformer: Clone + Fn(ParseTree) -> ParseObject {}
 
 impl<T> RuleTransformer for T where T: Clone + Fn(ParseTree) -> ParseObject {}
 
 #[derive(Clone)]
 pub struct RuleAction {
-    inner: Arc<dyn RuleTransformer>,
-    id: Uuid,
+    pub inner: Arc<dyn RuleTransformer>,
+    pub id: Uuid,
 }
 
 impl Default for RuleAction {
@@ -58,6 +58,17 @@ pub struct RuleDef {
     pub action: RuleAction,
 }
 
+impl RuleDef {
+    pub fn from_parts(parts: Vec<RulePart>) -> Self {
+        Self {
+            parts,
+            action: RuleAction::default(),
+        }
+    }
+}
+
+
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub enum Associativity {
     #[default]
@@ -66,11 +77,11 @@ pub enum Associativity {
     None,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RuleEntry {
     pub definitions: Vec<RuleDef>,
     pub precedence: u64,
-    // pub associativity: Associativity,
+    pub associativity: Associativity,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -640,6 +651,8 @@ mod tests {
                         ..Default::default()
                     }],
                     precedence: 0,
+                    ..Default::default()
+
                 }],
             ),
             (
@@ -656,6 +669,8 @@ mod tests {
                         },
                     ],
                     precedence: 0,
+                    ..Default::default()
+
                 }],
             ),
         ])

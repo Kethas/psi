@@ -1,82 +1,231 @@
-// i give up gonna try to make this with a proc macro
-
-use crate::grammar::*;
-
-macro_rules! psi_rulepart {
-    ($name:ident) => {{
+macro_rules! rulepart {
+    ($name:ident) => {
         RulePart::Rule(stringify!($name).to_owned())
-    }};
+    };
+
     ($lit:literal) => {{
-        RulePart::Literal($lit.to_string())
+        let literal: &str = $lit;
+        RulePart::Literal(literal.to_owned())
     }};
 }
 
-macro_rules! _psi_rule {
+macro_rules! rule_vec {
     (_) => {{
-        vec![RulePart::Empty]
+        use crate::grammar::*;
+
+        Vec::<RulePart>::new()
     }};
-    (($($part:tt)+,) _?) => {{
-        vec![$(psi_rulepart!($part))+,]
+    
+    (($($tok:tt)*)) => {{
+        use crate::grammar::*;
+
+        let v: Vec<RulePart> = vec![$(rulepart!($tok)),*];
+        v
+    }};
+    ([$($tok:tt)*]) => {{
+        use crate::grammar::*;
+
+        let v: Vec<RulePart> = vec![$(rulepart!($tok)),*];
+        v
+    }};
+    ({$($tok:tt)*}) => {{
+        use crate::grammar::*;
+
+        let v: Vec<RulePart> = vec![$(rulepart!($tok)),*];
+        v
+    }};
+    ($($tok:tt)*) => {{
+        use crate::grammar::*;
+
+        let v: Vec<RulePart> = vec![$(rulepart!($tok)),*];
+        v
+    }};
+
+}
+
+macro_rules! assoc {
+    (left) => {{
+        use crate::grammar::Associativity::*;
+        Left
+    }};
+    (right) => {{
+        use crate::grammar::Associativity::*;
+        Right
+    }};
+    (nonassoc) => {{
+        use crate::grammar::Associativity::*;
+        None
+    }};
+    (none) => {{
+        use crate::grammar::Associativity::*;
+        None
     }};
 }
 
-macro_rules! psi_rule {
-    ($($x:tt)+) => {{
-        RuleDef {
-            parts: _psi_rule!($($x)+)
-        }
-    }};
-}
+macro_rules! rule_entry {
+    (
+        $(@prec $($assoc:ident)? = $prec:expr,)?
+        $name:ident:
+        $($tok:tt
+            $(-> $action:expr)?
+        ),*
+        ;) => {{
+            use crate::grammar::*;
 
-macro_rules! psi_rule_entry {
-    (@$name:ident => $(($contents:tt))+) => {{
         (stringify!($name).to_owned(), RuleEntry {
-            precedence: 0,
-            definitions: vec![$(
-                psi_rule!(
-                    $contents
-                )
-            )+,]
+            definitions: {
+                let mut v = vec![];
+
+                $({
+                    let parts = rule_vec!($tok);
+
+                    $(if true {
+                        use std::sync::Arc;
+                        use uuid::Uuid;
+                        let action = RuleAction {
+                            inner: Arc::new($action),
+                            id: Uuid::new_v4(),
+                        };
+
+                        v.push(RuleDef {
+                            parts,
+                            action,
+                        });
+                    } else)?
+                    {
+                        v.push(RuleDef::from_parts(parts));
+                    }
+                })*
+
+                v
+            },
+            precedence: {
+                let mut out = 0;
+
+                $(if true {
+                    out = $prec;
+                })?
+
+                out
+            },
+            associativity: {
+                use Associativity::*;
+                let mut out = Left;
+                
+                $($(if true {
+                    out = assoc!($assoc);
+                })?)?
+
+                out
+            }
         })
     }};
-    (@$name:ident => $($contents:tt)+) => {{
-        psi_rule_entry!(@$name => ($($contents)+))
+
+    (
+        $(@prec $($assoc:ident)? = $prec:expr,)?    
+            $name:ident
+        $(| $tok:tt
+            $(-> $action:expr)?
+        )* 
+        ;
+    ) => {{
+        rule_entry!(
+            $(@prec $($assoc)? = $prec)?,
+            $name: $($tok $(-> $action)?),* ;
+        )
     }};
 }
 
-/*fn ___() {
-        raw_psi!{
-            start = abab;
-            abab = "abab";
+macro_rules! rules {
+    (
+        $(
+            $(@prec $($assoc:ident)? = $prec:expr,)?
+            $name:ident:
+            $($tok:tt
+                $(-> $action:expr)?
+            ),*
+        );* $(;)?
+    ) => {{
+        use std::collections::HashMap;
+        use crate::grammar::{RuleEntry, Rules};
+
+        let rules = vec![
+            $(
+                rule_entry!($(@prec $($assoc)? = $prec,)?
+                            $name:
+                            $(
+                                $tok
+                                $(-> $action)?
+                            ),*
+                            ;
+            )
+            ),*
+        ];
+
+        let mut map: HashMap<String, Vec<RuleEntry>> = HashMap::new();
+
+        for (name, rule_entry) in rules {
+            if map.contains_key(&name) {
+                map.get_mut(&name).unwrap().push(rule_entry);
+            } else {
+                map.insert(name, vec![rule_entry]);
+            }
         }
-    }*/
+
+        Rules::new(map)
+    
+    }};
+
+    // (
+    //     $(
+    //         $(@prec $($assoc:ident)? = $prec:expr,)?
+    //         $name:ident
+    //         $(| $tok:tt
+    //             $(-> $action:expr)?
+    //         )* 
+    //         ;
+    //     );* $(;)?
+    // ) => {{
+
+    // }};
+}
+
+macro_rules! psi {
+    ($($tt:tt)*) => {{
+        rules! {
+            $($tt)*
+        }.into_grammar()
+    }}
+}
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::grammar::*;
+    use crate::parse::parsed::ParseObject;
 
     #[test]
-    fn test_psi_rule_part_macro() {
-        assert_eq!(psi_rulepart!(expr), RulePart::Rule("expr".to_owned()));
-        assert_eq!(psi_rulepart!("32"), RulePart::Literal("32".to_owned()));
+    fn test() {
+        let _ = rule_vec!(_);
+        let _ = rule_vec!(());
+        let _ = rule_vec!(a "b" c);
+
+        let _ = rule_entry!(
+            @prec left = 13,
+            name: _,
+                  a,
+                  [a "1"] -> |pt| ParseObject::ParseTree(pt);
+        );
+
+        let rules = rules! {
+            start: expr;
+
+            @prec = 0,
+            expr: "()",
+                  ("(" expr ")");
+
+            @prec left = 10,
+            expr: expr,
+                  (expr "+" expr),
+                  (expr "-" expr);
+        };
     }
-
-    #[test]
-    fn test_psi_rule_macro() {
-        //assert_eq!(_psi_rule!((expr)), vec![RulePart::Rule("expr".to_owned())]);
-        //assert_eq!(_psi_rule!(("32")), vec![RulePart::Literal("32".to_owned())]);
-    }
-
-    #[test]
-    fn test_psi_rule_entry_macro() {
-        // assert_eq!(psi_rule_entry!(@expr => (expr "+" expr)), ("expr".to_owned(), RuleEntry { definitions: vec![
-        //     RuleDef {
-        //         parts: vec![RulePart::Rule("expr".to_owned()), RulePart::Literal("+".to_owned()), RulePart::Rule("expr".to_owned())]
-        //     }
-        // ], precedence: 0 }))
-    }
-
-    #[test]
-    fn test_psi_macro() {}
 }

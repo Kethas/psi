@@ -2,24 +2,28 @@ mod utils;
 
 //TODO: expand input types and optimize their cloning efficiency
 pub mod input;
+pub use input::{CharsInput, Input};
 
 //TODO: split into grammar and rules, maybe grammar > rules with pub use Rules
 pub mod grammar;
+pub use grammar::{Grammar, Rules};
 
 //TODO: make a non-recursive parsing function
 pub mod parse;
+pub use parse::Parser;
 
-mod psi_macro;
+#[macro_use]
+pub mod psi_macro;
 
 #[cfg(test)]
 mod tests {
-    use std::vec;
-
+    use super::*;
     use crate::{
         grammar::{Grammar, RuleDef, RuleEntry, RulePart, Rules},
         input::CharsInput,
         parse::{parsed::ParseTree, Parser},
     };
+    use std::vec;
 
     fn compile_expr_grammar() -> Grammar {
         let rules = Rules::new([
@@ -31,6 +35,7 @@ mod tests {
                         ..Default::default()
                     }],
                     precedence: 0,
+                    ..Default::default()
                 }],
             ),
             //parts: vec![RulePart::Literal("0".to_owned())],
@@ -77,6 +82,8 @@ mod tests {
                         },
                     ],
                     precedence: 0,
+                    ..Default::default()
+
                 }],
             ),
             (
@@ -87,6 +94,8 @@ mod tests {
                         ..Default::default()
                     }],
                     precedence: 0,
+                    ..Default::default()
+
                 }],
             ),
             (
@@ -103,6 +112,8 @@ mod tests {
                         },
                     ],
                     precedence: 0,
+                    ..Default::default()
+
                 }],
             ),
             (
@@ -122,6 +133,8 @@ mod tests {
                         },
                     ],
                     precedence: 0,
+                    ..Default::default()
+
                 }],
             ),
             (
@@ -142,6 +155,8 @@ mod tests {
                                 ..Default::default()
                             },
                         ],
+                        ..Default::default()
+
                     },
                     RuleEntry {
                         definitions: vec![
@@ -167,6 +182,8 @@ mod tests {
                             },
                         ],
                         precedence: 20,
+                        ..Default::default()
+
                     },
                     RuleEntry {
                         definitions: vec![
@@ -192,6 +209,8 @@ mod tests {
                             },
                         ],
                         precedence: 10,
+                        ..Default::default()
+
                     },
                     RuleEntry {
                         definitions: vec![
@@ -209,12 +228,40 @@ mod tests {
                             },
                         ],
                         precedence: 0,
+                        ..Default::default()
                     },
                 ],
             ),
         ]);
 
         rules.into_grammar()
+    }
+
+    fn macro_expr_grammar() -> Grammar {
+        psi! {
+            start: (expr);
+            
+            digit_nz: ("1"), ("2"), ("3"), ("4"), ("5"), ("6"), ("7"), ("8"), ("9");
+            zero: ("0");
+            digit: (digit_nz), 
+                   (zero);
+            number: (digit),
+                    (digit number);
+
+            @prec = 30,
+            expr: ("-" expr),
+                  (expr);
+            @prec = 20,
+            expr: (expr "+" expr),
+                  (expr "-" expr),
+                  (expr);
+            @prec = 10,
+            expr: (expr "*" expr),
+                  (expr "/" expr),
+                  (expr);
+            expr: (number),
+                  ("(" expr ")");
+        }
     }
 
     fn expr_grammar() -> Grammar {
@@ -265,6 +312,9 @@ mod tests {
     #[test]
     fn test_expr_0() {
         let compiled_grammar = compile_expr_grammar();
+        let macro_grammar = macro_expr_grammar();
+        println!("compiled:\n{:#?}\nmacro:\n{:#?}\n", compiled_grammar, macro_grammar);
+        assert_eq!(compiled_grammar, macro_grammar);
         //let expected_grammar = expr_grammar();
 
         println!("Compiled Grammar:\n{:#?}", compiled_grammar);

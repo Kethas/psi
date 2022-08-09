@@ -1,5 +1,5 @@
 use proc_macro::{Punct, TokenStream, TokenTree};
-use psilib::grammar::*;
+use psi::grammar::*;
 
 #[proc_macro]
 pub fn psi_rulepart(item: TokenStream) -> TokenStream {
