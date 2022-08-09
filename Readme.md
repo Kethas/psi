@@ -60,9 +60,9 @@ let result = parser.parse(&grammar);
 ```
 
 ## Known issues
-  - Multiple End RuleParts being generated when compiling a Grammar.
    - Left recursion is impossible currently. This is possible to implement, and kind of necessary because recursion is encouraged.
    - The current parsing implementation is recursive using function calls. This could be optimized in some way
+   - Transformation actions can be defined in `Rules` for each rule definition, though these are completely ignored and unimplemented after compilation to a Grammar.
 
 ## License
 See LICENSE for details.
