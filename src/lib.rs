@@ -14,6 +14,7 @@ pub use parse::Parser;
 
 #[macro_use]
 pub mod psi_macro;
+pub use psi_macro::{psi, rules};
 
 #[cfg(test)]
 mod tests {
@@ -83,7 +84,6 @@ mod tests {
                     ],
                     precedence: 0,
                     ..Default::default()
-
                 }],
             ),
             (
@@ -95,7 +95,6 @@ mod tests {
                     }],
                     precedence: 0,
                     ..Default::default()
-
                 }],
             ),
             (
@@ -113,7 +112,6 @@ mod tests {
                     ],
                     precedence: 0,
                     ..Default::default()
-
                 }],
             ),
             (
@@ -134,7 +132,6 @@ mod tests {
                     ],
                     precedence: 0,
                     ..Default::default()
-
                 }],
             ),
             (
@@ -156,7 +153,6 @@ mod tests {
                             },
                         ],
                         ..Default::default()
-
                     },
                     RuleEntry {
                         definitions: vec![
@@ -183,7 +179,6 @@ mod tests {
                         ],
                         precedence: 20,
                         ..Default::default()
-
                     },
                     RuleEntry {
                         definitions: vec![
@@ -210,7 +205,6 @@ mod tests {
                         ],
                         precedence: 10,
                         ..Default::default()
-
                     },
                     RuleEntry {
                         definitions: vec![
@@ -239,33 +233,29 @@ mod tests {
 
     fn macro_expr_grammar() -> Grammar {
         psi! {
-            start: (expr);
-            
-            digit_nz: ("1"), ("2"), ("3"), ("4"), ("5"), ("6"), ("7"), ("8"), ("9");
-            zero: ("0");
-            digit: (digit_nz), 
-                   (zero);
-            number: (digit),
+            start: expr;
+
+            digit_nz: "1", "2", "3", "4", "5", "6", "7", "8", "9";
+            zero: "0";
+            digit: zero,
+                   digit_nz;
+            number: digit,
                     (digit number);
 
             @prec = 30,
             expr: ("-" expr),
-                  (expr);
+                  expr;
             @prec = 20,
             expr: (expr "+" expr),
                   (expr "-" expr),
-                  (expr);
+                  expr;
             @prec = 10,
             expr: (expr "*" expr),
                   (expr "/" expr),
-                  (expr);
-            expr: (number),
+                  expr;
+            expr: number,
                   ("(" expr ")");
         }
-    }
-
-    fn expr_grammar() -> Grammar {
-        Grammar::new([])
     }
 
     fn eval_expr(parsed: &ParseTree) -> f64 {
@@ -313,7 +303,10 @@ mod tests {
     fn test_expr_0() {
         let compiled_grammar = compile_expr_grammar();
         let macro_grammar = macro_expr_grammar();
-        println!("compiled:\n{:#?}\nmacro:\n{:#?}\n", compiled_grammar, macro_grammar);
+        println!(
+            "compiled:\n{:#?}\nmacro:\n{:#?}\n",
+            compiled_grammar, macro_grammar
+        );
         assert_eq!(compiled_grammar, macro_grammar);
         //let expected_grammar = expr_grammar();
 
@@ -326,7 +319,7 @@ mod tests {
 
         let mut parser = Parser::<CharsInput>::new(input);
 
-        let result = parser.parse(&compiled_grammar);
+        let result = parser.parse(&macro_grammar);
 
         if let Err(e) = result {
             eprintln!("ParseError:\n{:#?}", e);

@@ -1,9 +1,9 @@
 use std::{
     collections::HashMap,
-    fmt::{Debug, Display}, hash::Hash,
+    fmt::{Debug, Display},
 };
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum ParseTree {
     End,
     Literal(String),
@@ -33,6 +33,7 @@ impl Display for ParseTree {
     }
 }
 
+#[derive(Clone, PartialEq)]
 pub enum ParseObject {
     ParseTree(ParseTree),
     Object(HashMap<String, ParseObject>),

@@ -1,7 +1,14 @@
 use crate::parse::parsed::*;
 use crate::utils::*;
 use lazy_static::lazy_static;
-use std::{cmp::Ordering, collections::HashMap, fmt::Debug, rc::Rc, sync::Arc, vec};
+use std::{
+    cmp::Ordering,
+    collections::HashMap,
+    fmt::{Debug, Display},
+    rc::Rc,
+    sync::Arc,
+    vec,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RulePart {
@@ -67,8 +74,6 @@ impl RuleDef {
     }
 }
 
-
-
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub enum Associativity {
     #[default]
@@ -108,9 +113,9 @@ impl Rules {
     }
 
     pub(crate) fn flattened(self) -> FlattenedRules {
-        let mut rules: HashMap<String, HashMap<u64, Vec<Vec<RulePart>>>> = HashMap::new();
+        let mut rules: HashMap<String, HashMap<u64, Vec<RuleEntry>>> = HashMap::new();
 
-        for (name, rule_entries) in self.rules {
+        for (name, rule_entries) in self.rules.clone() {
             let precedences = match rules.get_mut(&name) {
                 Some(precedences) => precedences,
                 None => {
@@ -128,9 +133,7 @@ impl Rules {
                     }
                 };
 
-                for def in rule_entry.definitions {
-                    precedence.push(def.parts);
-                }
+                precedence.push(rule_entry)
             }
         }
 
@@ -155,8 +158,12 @@ impl Rules {
                     }
                 };
 
-                for (_, rule) in precedences {
-                    v.extend(rule);
+                for (_, entries) in precedences {
+                    for entry in entries {
+                        for rule in entry.definitions {
+                            v.push(rule.parts);
+                        }
+                    }
                 }
 
                 continue;
@@ -181,46 +188,40 @@ impl Rules {
             // right assoc would be `rule_x: rule_x... rule_x-1` but i haveent implemented left recursion yet
             // nonassoc would be `rule_x: rule_x-1...`
             let all_precedences = precedences.keys().copied().collect::<Vec<_>>();
-            for (precedence, rules) in precedences {
+            for (precedence, entries) in precedences {
                 let prec_name = format!("{name}@{precedence}");
                 let next_prec = format!(
                     "{name}@{}",
                     get_next_prec(precedence, all_precedences.clone())
                 );
 
-                for rule in rules {
-                    let mut out_rule = Vec::new();
-
-                    if rule.is_empty() {
-                        out_rule.push(RulePart::Empty)
-                    } else {
-                        out_rule = rule;
-                        if let Some(part) = out_rule.first_mut() {
-                            match part {
-                                RulePart::Rule(n) if n == &name => *n = next_prec.clone(),
-                                _ => {}
-                            }
-
-                            drop(part);
-
-                            for part in &mut out_rule[1..] {
-                                match part {
-                                    RulePart::Rule(n) if n == &name => *n = prec_name.clone(),
-                                    _ => {}
-                                }
-                            }
-                        }
+                let v = match out.get_mut(&prec_name) {
+                    Some(v) => v,
+                    None => {
+                        out.insert(prec_name.clone(), Vec::new());
+                        out.get_mut(&prec_name).unwrap()
                     }
+                };
 
-                    let v = match out.get_mut(&prec_name) {
-                        Some(v) => v,
-                        None => {
-                            out.insert(prec_name.clone(), Vec::new());
-                            out.get_mut(&prec_name).unwrap()
+                for entry in entries {
+                    let assoc = entry.associativity;
+
+                    for def in entry.definitions {
+                        if def.parts.is_empty() {
+                            v.push(vec![RulePart::Empty]);
+                            continue;
                         }
-                    };
 
-                    v.push(out_rule);
+                        let len = def.parts.len();
+
+                        v.push(
+                            def.parts
+                                .into_iter()
+                                .enumerate()
+                                .map(assoc_applier(len, assoc, name.clone(), prec_name.clone(), next_prec.clone()))
+                                .collect(),
+                        )
+                    }
                 }
             }
         }
@@ -231,6 +232,43 @@ impl Rules {
     pub fn into_grammar(self) -> Grammar {
         self.flattened().into_grammar()
     }
+}
+
+// TODO: actually test that the implementation is correct and not a brain fart - maybe l and r are switched
+fn assoc_applier(
+    len: usize,
+    assoc: Associativity,
+    name: String,
+    prec_name: String,
+    next_prec: String,
+) -> Box<dyn Fn((usize, RulePart)) -> RulePart> {
+    Box::new(move |(n, rule_part)| match assoc {
+        // rule_x: rule_x-1 rule_x...
+        Associativity::Left if n == 0 => match rule_part {
+            RulePart::Rule(r) if r == name => RulePart::Rule(next_prec.clone()),
+            x => x,
+        },
+        Associativity::Left => match rule_part { 
+            RulePart::Rule(r) if r == name => RulePart::Rule(prec_name.clone()),
+            x => x,
+        },
+
+        // rule_x: rule_x... rule_x-1
+        Associativity::Right if n == len => match rule_part {
+            RulePart::Rule(r) if r == name => RulePart::Rule(next_prec.clone()),
+            x => x,
+        },
+        Associativity::Right => match rule_part {
+            RulePart::Rule(r) if r == name => RulePart::Rule(prec_name.clone()),
+            x => x,
+        },
+        
+        // rule_x: rule_x-1...
+        Associativity::None => match rule_part {
+            RulePart::Rule(r) if r == name => RulePart::Rule(next_prec.clone()),
+            x => x,
+        },
+    })
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -512,8 +550,6 @@ impl FlattenedRules {
                     out.push(node.clone());
                     continue 'node;
                 }
-                // here it means node wasnt added to the rest
-                out.push(node.clone());
 
                 for i in 0..out.len() {
                     if node.equivalent(&out[i]) {
@@ -611,7 +647,7 @@ impl RuleTree {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Grammar {
     rules: HashMap<String, Boxs<RuleTree>>,
 }
@@ -636,6 +672,30 @@ impl Grammar {
     }
 }
 
+impl Debug for Grammar {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut rule_names = self.rules.keys().cloned().collect::<Vec<_>>();
+        rule_names.sort();
+
+        let mut first = true;
+
+        for rule_name in rule_names {
+            if !first {
+                f.write_str("\n")?;
+            } else {
+                first = false;
+            }
+
+            f.write_str(&rule_name)?;
+            f.write_str(": ");
+            Debug::fmt(self.rules.get(&rule_name).unwrap(), f)?;
+            f.write_str(";\n")?;
+        }
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -652,7 +712,6 @@ mod tests {
                     }],
                     precedence: 0,
                     ..Default::default()
-
                 }],
             ),
             (
@@ -670,7 +729,6 @@ mod tests {
                     ],
                     precedence: 0,
                     ..Default::default()
-
                 }],
             ),
         ])

@@ -1,3 +1,5 @@
+#[macro_export]
+/// A RulePart -- Either a Rule (identifier) or a Literal (string literal).
 macro_rules! rulepart {
     ($name:ident) => {
         RulePart::Rule(stringify!($name).to_owned())
@@ -9,33 +11,35 @@ macro_rules! rulepart {
     }};
 }
 
+#[macro_export]
+// A vector of rules -- Either an empty vector (_), any list of tokens ({},[],()), or any single rule part.
 macro_rules! rule_vec {
     (_) => {{
-        use crate::grammar::*;
+        use $crate::grammar::*;
 
         Vec::<RulePart>::new()
     }};
-    
+
     (($($tok:tt)*)) => {{
-        use crate::grammar::*;
+        use $crate::grammar::*;
 
         let v: Vec<RulePart> = vec![$(rulepart!($tok)),*];
         v
     }};
     ([$($tok:tt)*]) => {{
-        use crate::grammar::*;
+        use $crate::grammar::*;
 
         let v: Vec<RulePart> = vec![$(rulepart!($tok)),*];
         v
     }};
     ({$($tok:tt)*}) => {{
-        use crate::grammar::*;
+        use $crate::grammar::*;
 
         let v: Vec<RulePart> = vec![$(rulepart!($tok)),*];
         v
     }};
     ($($tok:tt)*) => {{
-        use crate::grammar::*;
+        use $crate::grammar::*;
 
         let v: Vec<RulePart> = vec![$(rulepart!($tok)),*];
         v
@@ -43,25 +47,25 @@ macro_rules! rule_vec {
 
 }
 
+#[macro_export]
+// The associativity -- left, right, or none/nonassoc
 macro_rules! assoc {
     (left) => {{
-        use crate::grammar::Associativity::*;
-        Left
+        Associativity::Left
     }};
     (right) => {{
-        use crate::grammar::Associativity::*;
-        Right
+        Associativity::Right
     }};
     (nonassoc) => {{
-        use crate::grammar::Associativity::*;
-        None
+        Associativity::None
     }};
     (none) => {{
-        use crate::grammar::Associativity::*;
-        None
+        Associativity::None
     }};
 }
 
+#[macro_export]
+// A rule entry.
 macro_rules! rule_entry {
     (
         $(@prec $($assoc:ident)? = $prec:expr,)?
@@ -70,7 +74,8 @@ macro_rules! rule_entry {
             $(-> $action:expr)?
         ),*
         ;) => {{
-            use crate::grammar::*;
+            use $crate::grammar::*;
+
 
         (stringify!($name).to_owned(), RuleEntry {
             definitions: {
@@ -111,7 +116,7 @@ macro_rules! rule_entry {
             associativity: {
                 use Associativity::*;
                 let mut out = Left;
-                
+
                 $($(if true {
                     out = assoc!($assoc);
                 })?)?
@@ -120,22 +125,9 @@ macro_rules! rule_entry {
             }
         })
     }};
-
-    (
-        $(@prec $($assoc:ident)? = $prec:expr,)?    
-            $name:ident
-        $(| $tok:tt
-            $(-> $action:expr)?
-        )* 
-        ;
-    ) => {{
-        rule_entry!(
-            $(@prec $($assoc)? = $prec)?,
-            $name: $($tok $(-> $action)?),* ;
-        )
-    }};
 }
 
+#[macro_export]
 macro_rules! rules {
     (
         $(
@@ -147,7 +139,8 @@ macro_rules! rules {
         );* $(;)?
     ) => {{
         use std::collections::HashMap;
-        use crate::grammar::{RuleEntry, Rules};
+        use $crate::grammar::*;
+
 
         let rules = vec![
             $(
@@ -173,7 +166,7 @@ macro_rules! rules {
         }
 
         Rules::new(map)
-    
+
     }};
 
     // (
@@ -182,7 +175,7 @@ macro_rules! rules {
     //         $name:ident
     //         $(| $tok:tt
     //             $(-> $action:expr)?
-    //         )* 
+    //         )*
     //         ;
     //     );* $(;)?
     // ) => {{
@@ -190,13 +183,57 @@ macro_rules! rules {
     // }};
 }
 
+pub use rules;
+
+/// This macro can be used to generate a Psi Grammar.
+/// Example:
+/// ```
+/// # #[macro_use] extern crate psi;
+/// use psi::*;
+///
+/// # fn main() {
+/// let grammar = psi!{
+///     start: a;
+///
+///     a: "a",
+///        (b a);
+///     b: "b";
+/// };
+///
+/// let source = "ba".chars();
+/// let mut parser = Parser::<CharsInput>::new(source);
+///
+/// let result = parser.parse(&grammar).expect("Failed to parse.");
+///
+/// use psi::parse::parsed::ParseTree::*;
+/// assert_eq!(result,
+///     Rule("start".to_owned(),
+///         vec![
+///             Rule("a".to_owned(), vec![
+///                 Rule("b".to_owned(), vec![
+///                     Literal("b".to_owned())
+///                 ]),
+///                 Rule("a".to_owned(), vec![
+///                     Literal("a".to_owned())
+///                 ])
+///             ])
+///         ]
+///     )
+/// )
+/// # }
+///
+/// ```
+#[macro_export]
 macro_rules! psi {
     ($($tt:tt)*) => {{
+        use $crate::grammar::*;
+
         rules! {
             $($tt)*
         }.into_grammar()
     }}
 }
+pub use psi;
 
 #[cfg(test)]
 mod tests {
