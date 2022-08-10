@@ -61,7 +61,10 @@ mod tests {
     use crate::{
         grammar::{Grammar, RuleDef, RuleEntry, RulePart, Rules},
         input::CharsInput,
-        parse::{parsed::{ParseTree, ParseObject}, Parser},
+        parse::{
+            parsed::{ParseObject, ParseTree},
+            Parser,
+        },
     };
     use std::vec;
 
@@ -272,28 +275,29 @@ mod tests {
 
     fn macro_expr_grammar() -> Grammar {
         psi! {
-            start: expr;
+            start: expr -> |o| Ok(o[0].clone());
 
             digit_nz: "1", "2", "3", "4", "5", "6", "7", "8", "9";
             zero: "0";
             digit: zero,
                    digit_nz;
-            number: digit,
-                    (digit number);
+            digits: digit,
+                    (digit digits);
+            number: digits -> |o| Ok(Float(o[0].to_string().parse()?));
 
             @prec = 30,
-            expr: ("-" expr) -> |o| -o.as_list().unwrap().get(1).unwrap().as_f64().unwrap(),
+            expr: ("-" expr) -> |o| Ok(Float(-o[1].as_float()?)),
                   expr;
             @prec = 20,
-            expr: (expr "+" expr),
-                  (expr "-" expr),
+            expr: (expr "+" expr) -> |o| Ok(Float(o[0].as_float()? + o[1].as_float()?)),
+                  (expr "-" expr) -> |o| Ok(Float(o[0].as_float()? - o[1].as_float()?)),
                   expr;
             @prec = 10,
-            expr: (expr "*" expr),
-                  (expr "/" expr),
+            expr: (expr "*" expr) -> |o| Ok(Float(o[0].as_float()? * o[1].as_float()?)),
+                  (expr "/" expr) -> |o| Ok(Float(o[0].as_float()? / o[1].as_float()?)),
                   expr;
-            expr: number -> |o| Float(o.to_string().parse().unwrap()),
-                  ("(" expr ")") -> |o| o.into_list().unwrap().remove(1);
+            expr: number -> |o| Ok(o[0].clone()),
+                  ("(" expr ")") -> |o| Ok(o.into_list()?.remove(1));
         }
     }
 
@@ -306,8 +310,6 @@ mod tests {
             compiled_grammar, macro_grammar
         );
         //assert_eq!(compiled_grammar, macro_grammar);
-
-
 
         let input = "12+33*85+233".chars();
         let expected_result = 12.0 + 33.0 * 85.0 + 233.0;

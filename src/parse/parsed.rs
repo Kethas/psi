@@ -1,7 +1,10 @@
 use std::{
     collections::HashMap,
-    fmt::{Debug, Display}, sync::Arc,
+    fmt::{Debug, Display},
+    sync::Arc, ops::Index,
 };
+use eyre::{eyre, Context};
+use eyre::ContextCompat;
 
 use crate::grammar::RuleAction;
 
@@ -48,97 +51,150 @@ pub enum ParseObject {
 }
 
 impl ParseObject {
-    pub fn as_object(&self) -> Option<&HashMap<String, ParseObject>> {
+    fn expected_type<T>(&self, expected: &'static str) -> eyre::Result<T> {
+        Err(eyre!("Object was not of type {expected}, but of type {}.", self.stringified_type()))
+    }
+
+    pub fn stringified_type(&self) -> &'static str {
         match self {
-            ParseObject::Object(obj) => Some(obj),
-            _ => None,
+            ParseObject::Nothing => "nothing",
+            ParseObject::Literal(_) => "literal",
+            ParseObject::Rule(_, _) => "rule",
+            ParseObject::Object(_) => "object",
+            ParseObject::List(_) => "list",
+            ParseObject::Str(_) => "str",
+            ParseObject::Int(_) => "int",
+            ParseObject::Float(_) => "float",
         }
     }
 
-    pub fn into_object(self) -> Option<HashMap<String, ParseObject>> {
-        match self {
-            ParseObject::Object(obj) => Some(obj),
-            _ => None
+    pub fn index(&self, i: usize) -> eyre::Result<&ParseObject> {
+        let ty = self.stringified_type();
+        if ty == "list" {
+            self.as_list()?.get(i).wrap_err(format!("Index {i} out of bounds."))
+        } else if ty == "rule" {
+            self.as_rule()?.1.get(i).wrap_err(format!("Index {i} out of bounds."))
+        } else {
+            Err(eyre!("Object was of type {ty}, not list or rule."))
         }
     }
 
-    pub fn as_list(&self) -> Option<&Vec<ParseObject>> {
+    pub fn as_rule(&self) -> eyre::Result<(&str, &[ParseObject])> {
         match self {
-            ParseObject::List(list) => Some(list),
-            _ => None,
+            ParseObject::Rule(n, v) => Ok((n, v)),
+            _ => self.expected_type("rule")
         }
     }
 
-    pub fn into_list(self) -> Option<Vec<ParseObject>> {
+    pub fn into_rule(self) -> eyre::Result<(String, Vec<ParseObject>)> {
         match self {
-            ParseObject::List(list) => Some(list),
-            _ => None,
+            ParseObject::Rule(n, v) => Ok((n, v)),
+            _ => self.expected_type("rule")
         }
     }
 
-    pub fn as_string(&self) -> Option<&str> {
+    pub fn as_literal(&self) -> eyre::Result<&str> {
         match self {
-            ParseObject::Str(str) => Some(str),
-            _ => None,
+            ParseObject::Literal(l) => Ok(l),
+            _ => self.expected_type("literal")
         }
     }
 
-    pub fn into_string(self) -> Option<String> {
+    pub fn into_literal(self) -> eyre::Result<String> {
         match self {
-            ParseObject::Str(str) => Some(str),
-            _ => None,
+            ParseObject::Literal(l) => Ok(l),
+            _ => self.expected_type("literal")
         }
     }
 
-    pub fn as_int(&self) -> Option<i64> {
+    pub fn as_object(&self) -> eyre::Result<&HashMap<String, ParseObject>> {
         match self {
-            ParseObject::Int(i) => Some(*i),
-            _ => None,
+            ParseObject::Object(obj) => Ok(obj),
+            _ => self.expected_type("object")
         }
     }
 
-    pub fn into_int(&self) -> Option<i64> {
+    pub fn into_object(self) -> eyre::Result<HashMap<String, ParseObject>> {
         match self {
-            ParseObject::Int(i) => Some(*i),
-            _ => None,
+            ParseObject::Object(obj) => Ok(obj),
+            _ => self.expected_type("object")
         }
     }
 
-    pub fn as_float(&self) -> Option<f64> {
+    pub fn as_list(&self) -> eyre::Result<&Vec<ParseObject>> {
         match self {
-            ParseObject::Float(f) => Some(*f),
-            _ => None,
+            ParseObject::List(list) => Ok(list),
+            _ => self.expected_type("list")
         }
     }
 
-    pub fn into_float(&self) -> Option<f64> {
+    pub fn into_list(self) -> eyre::Result<Vec<ParseObject>> {
         match self {
-            ParseObject::Float(f) => Some(*f),
-            _ => None,
+            ParseObject::List(list) => Ok(list),
+            _ => self.expected_type("list")
+        }
+    }
+
+    pub fn as_string(&self) -> eyre::Result<&str> {
+        match self {
+            ParseObject::Str(str) => Ok(str),
+            _ => self.expected_type("str")
+        }
+    }
+
+    pub fn into_string(self) -> eyre::Result<String> {
+        match self {
+            ParseObject::Str(str) => Ok(str),
+            _ => self.expected_type("str")
+        }
+    }
+
+    pub fn as_int(&self) -> eyre::Result<i64> {
+        match self {
+            ParseObject::Int(i) => Ok(*i),
+            _ => self.expected_type("int")
+        }
+    }
+
+    pub fn into_int(self) -> eyre::Result<i64> {
+        match self {
+            ParseObject::Int(i) => Ok(i),
+            _ => self.expected_type("int")
+        }
+    }
+
+    pub fn as_float(&self) -> eyre::Result<f64> {
+        match self {
+            ParseObject::Float(f) => Ok(*f),
+            _ => self.expected_type("float")
+        }
+    }
+
+    pub fn into_float(self) -> eyre::Result<f64> {
+        match self {
+            ParseObject::Float(f) => Ok(f),
+            _ => self.expected_type("float")
         }
     }
 }
 
-impl From<ParseTree> for ParseObject
-{
+impl From<ParseTree> for ParseObject {
     fn from(x: ParseTree) -> Self {
         match x {
             ParseTree::End => Self::Nothing,
-            ParseTree::Literal(x) => Self::Literal(x) ,
+            ParseTree::Literal(x) => Self::Literal(x),
             ParseTree::Rule(n, v) => Self::Rule(n, v.into_iter().map(ParseObject::from).collect()),
         }
     }
 }
 
-impl<'a> From<HashMap<&'a str, ParseObject>> for ParseObject
-{
+impl<'a> From<HashMap<&'a str, ParseObject>> for ParseObject {
     fn from(x: HashMap<&'a str, ParseObject>) -> Self {
         ParseObject::Object(x.into_iter().map(|(k, v)| (k.to_owned(), v)).collect())
     }
 }
 
-impl From<Vec<ParseObject>> for ParseObject
-{
+impl From<Vec<ParseObject>> for ParseObject {
     fn from(x: Vec<ParseObject>) -> Self {
         ParseObject::List(x)
     }
@@ -173,13 +229,15 @@ impl Display for ParseObject {
                 }
 
                 Ok(())
-            },
-            ParseObject::Object(map) => {
-                f.debug_set().entries(map.iter().map(|(k, v)| format!("{k}: {v}"))).finish()
-            },
-            ParseObject::List(v) => {
-                f.debug_list().entries(v.iter().map(|x| x.to_string())).finish()
-            },
+            }
+            ParseObject::Object(map) => f
+                .debug_set()
+                .entries(map.iter().map(|(k, v)| format!("{k}: {v}")))
+                .finish(),
+            ParseObject::List(v) => f
+                .debug_list()
+                .entries(v.iter().map(|x| x.to_string()))
+                .finish(),
             ParseObject::Str(s) => f.write_fmt(format_args!("\"{s}\"")),
             ParseObject::Int(i) => f.write_fmt(format_args!("{i}")),
             ParseObject::Float(n) => f.write_fmt(format_args!("{n}")),
@@ -187,6 +245,13 @@ impl Display for ParseObject {
     }
 }
 
+impl Index<usize> for ParseObject {
+    type Output = ParseObject;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        self.index(index).unwrap()
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TreeBuffer {
@@ -195,12 +260,16 @@ pub enum TreeBuffer {
 }
 
 impl TreeBuffer {
+    //TODO: test this
     pub fn transfrom(self) -> ParseObject {
         match self {
             TreeBuffer::Literal(lit) => ParseObject::Literal(lit),
-            TreeBuffer::Rule(name, inner, action) => {
-                action.apply(ParseObject::Rule(name, inner.into_iter().map(|x| x.transfrom()).collect()))
-            },
+            TreeBuffer::Rule(name, inner, action) => action
+                .apply(ParseObject::Rule(
+                    name,
+                    inner.into_iter().map(|x| x.transfrom()).collect(),
+                ))
+                .unwrap(),
         }
     }
 }

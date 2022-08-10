@@ -93,6 +93,9 @@ macro_rules! rule_entry {
                         use uuid::Uuid;
                         use $crate::parse::parsed::ParseObject;
                         use ParseObject::*;
+                        use eyre;
+                        use eyre::{Result, ContextCompat};
+                        
                         let action = RuleAction {
                             inner: Arc::new($action),
                             id: Uuid::new_v4(),
@@ -247,7 +250,7 @@ mod tests {
             @prec left = 13,
             name: _,
                   a,
-                  [a "1"] -> |x| x;
+                  [a "1"] -> |x| Ok(x);
         );
 
         let rules = rules! {

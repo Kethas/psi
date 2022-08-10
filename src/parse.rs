@@ -236,16 +236,16 @@ mod tests {
         psi! {
             start: a -> {let (a_count, b_count) = (a_count.clone(), b_count.clone()); move |_| {
                 use ParseObject::*;
-                List(vec![Int(*a_count.lock().unwrap()), Int(*b_count.lock().unwrap())])
+                Ok(List(vec![Int(*a_count.lock().unwrap()), Int(*b_count.lock().unwrap())]))
             }};
 
             a: "b" -> {let b_count = b_count.clone(); move |x| {
                 *b_count.lock().unwrap() += 1;
-                x
+                Ok(x)
             }},
                ("a" a) -> {let a_count = a_count.clone(); move |x| {
                 *a_count.lock().unwrap() += 1;
-                x
+                Ok(x)
             }};
         }
     }

@@ -18,9 +18,9 @@ pub enum RulePart {
 }
 
 #[dyn_clonable::clonable]
-pub trait RuleTransformer: Clone + Fn(ParseObject) -> ParseObject {}
+pub trait RuleTransformer: Clone + Fn(ParseObject) -> eyre::Result<ParseObject> {}
 
-impl<T> RuleTransformer for T where T: Clone + Fn(ParseObject) -> ParseObject {}
+impl<T> RuleTransformer for T where T: Clone + Fn(ParseObject) -> eyre::Result<ParseObject> {}
 
 #[derive(Clone)]
 pub struct RuleAction {
@@ -31,7 +31,7 @@ pub struct RuleAction {
 impl Default for RuleAction {
     fn default() -> Self {
         Self {
-            inner: Arc::new(|x| x),
+            inner: Arc::new(|x| Ok(x)),
             id: Uuid::nil(),
         }
     }
@@ -52,7 +52,7 @@ impl PartialEq for RuleAction {
 impl Eq for RuleAction {}
 
 impl RuleAction {
-    pub fn apply(&self, input: ParseObject) -> ParseObject {
+    pub fn apply(&self, input: ParseObject) -> eyre::Result<ParseObject> {
         (self.inner)(input)
     }
 }
