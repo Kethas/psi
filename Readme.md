@@ -23,7 +23,6 @@ The easiest way to do this is to use the macro from the module `psi::psi_macro`.
 
 Using the `psi` or `rules` macro, you can declaratively define the rules of the grammar, including precedence and associativity.
 
-Example:
 ```rust
 // include the prelude.
 use psi::*;
@@ -59,10 +58,25 @@ let mut parser = Parser::<CharsInput>::new(source);
 let result = parser.parse(&grammar);
 ```
 
+Parsing the above grammar will yield a parse tree. 
+In order to make the parsed output more useful, actions can be attributed to each rule definition.
+
+```rust
+let grammar = psi!{
+      expr: number -> |o| Ok(Float( o.to_string().parse()? )),
+            (expr "+" expr) -> |o| Ok(Float( o[0].as_float()? + o[1].as_float()? ));
+}
+```
+
+The type of an action is a `psi::grammar::RuleTransformer`, or rather, a closure receiving a `ParseObject` and returning an `eyre::Result<ParseObject>`. 
+
+Actions are powerful enough to both vaidate data, but also transform it, allowing for simple parsing programs (such as a calculator) to be directly defined as a grammar. 
+
+Actions can be used to build an AST to be returned instead of the parse tree.
+
 ## Known issues
    - Left recursion is impossible currently. This is possible to implement, and kind of necessary because recursion is encouraged.
    - The current parsing implementation is recursive using function calls. This could be optimized in some way
-   - Transformation actions can be defined in `Rules` for each rule definition, though these are completely ignored and unimplemented after compilation to a Grammar.
 
 ## License
 See LICENSE for details.
