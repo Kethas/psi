@@ -32,11 +32,9 @@ impl Default for RuleAction {
     fn default() -> Self {
         Self {
             inner: Arc::new(|x| match x {
-                
                 // ignore aliasing rules -- rules with only one inner
-                ParseObject::Rule(_, mut v) if v.len() == 1 => {
-                    Ok(v.remove(0))
-                }
+                //TODO: re-examine and re-evaluate this. Maybe there should be an opt-in way unwrapping aliasing or vice versa.
+                ParseObject::Rule(_, mut v) if v.len() == 1 => Ok(v.remove(0)),
 
                 x => Ok(x),
             }),

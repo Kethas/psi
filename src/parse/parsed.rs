@@ -52,6 +52,24 @@ pub enum ParseObject {
     Float(f64),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ParseObjectType {
+    Nothing,
+    Literal,
+    Rule,
+    Object,
+    List,
+    Str,
+    Int,
+    Float
+}
+
+impl Display for ParseObjectType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&format!("{self:?}").to_lowercase())
+    }
+}
+
 impl ParseObject {
     fn expected_type<T>(&self, expected: &'static str) -> eyre::Result<T> {
         Err(eyre!(
@@ -60,17 +78,23 @@ impl ParseObject {
         ))
     }
 
-    pub fn stringified_type(&self) -> &'static str {
+
+    fn get_type(&self) -> ParseObjectType {
+        use ParseObjectType::*;
         match self {
-            ParseObject::Nothing => "nothing",
-            ParseObject::Literal(_) => "literal",
-            ParseObject::Rule(_, _) => "rule",
-            ParseObject::Object(_) => "object",
-            ParseObject::List(_) => "list",
-            ParseObject::Str(_) => "str",
-            ParseObject::Int(_) => "int",
-            ParseObject::Float(_) => "float",
+            ParseObject::Nothing => Nothing,
+            ParseObject::Literal(_) => Literal,
+            ParseObject::Rule(_, _) => Rule,
+            ParseObject::Object(_) => Object,
+            ParseObject::List(_) => List,
+            ParseObject::Str(_) => Str,
+            ParseObject::Int(_) => Int,
+            ParseObject::Float(_) => Float,
         }
+    }
+
+    pub fn stringified_type(&self) -> String {
+        self.get_type().to_string()
     }
 
     pub fn index(&self, i: usize) -> eyre::Result<&ParseObject> {
