@@ -146,7 +146,7 @@ pub use rule_entry;
 ///
 /// # fn main() {
 /// let grammar = psi!{
-///     start: a;
+///     start: a -> |o| Ok(o);
 ///
 ///     a: "a",
 ///        (b a);
@@ -163,12 +163,8 @@ pub use rule_entry;
 ///     Rule("start".to_owned(),
 ///         vec![
 ///             Rule("a".to_owned(), vec![
-///                 Rule("b".to_owned(), vec![
-///                     Literal("b".to_owned())
-///                 ]),
-///                 Rule("a".to_owned(), vec![
-///                     Literal("a".to_owned())
-///                 ])
+///                 Literal("b".to_owned()),
+///                 Literal("a".to_owned())
 ///             ])
 ///         ]
 ///     )

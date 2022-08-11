@@ -1,3 +1,5 @@
+use std::{error::Error, fmt::Display};
+
 use crate::{grammar::*, input::Input, utils::Boxs};
 
 pub mod parsed;
@@ -17,6 +19,34 @@ pub enum ParseError {
     },
 }
 
+impl Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParseError::Many(errs) => {
+                for err in errs.iter() {
+                    writeln!(f, "{}", err)?;
+                }
+                Ok(())
+            }
+            ParseError::Unexpected {
+                expected,
+                found,
+                pos,
+            } => {
+                writeln!(
+                    f,
+                    "Unexpected string '{found}' found at pos {pos}. Expected '{expected}.'"
+                )
+            }
+            ParseError::NoSuchRule { name, pos } => {
+                writeln!(f, "No such rule {name} (pos {pos}).")
+            }
+        }
+    }
+}
+
+impl Error for ParseError {}
+
 pub type ParseResult = Result<ParseObject, ParseError>;
 
 #[derive(Clone, Debug)]
@@ -31,10 +61,10 @@ impl<I: Input> Parser<I> {
         }
     }
 
-    pub fn parse(&mut self, grammar: &Grammar) -> ParseResult {
+    pub fn parse(&mut self, grammar: &Grammar) -> eyre::Result<ParseObject> {
         let tree_buffer = self.parse_rule_by_name(grammar, "start")?;
 
-        Ok(tree_buffer.transfrom())
+        Ok(tree_buffer.transfrom()?)
     }
 
     pub fn parse_rule_by_name(
@@ -258,8 +288,7 @@ mod tests {
         let out = parser.parse(&aaab_actions_grammar()).unwrap();
 
         use ParseObject::*;
-        
-        assert_eq!(List(vec![Int(3), Int(1)]), out)
 
+        assert_eq!(List(vec![Int(3), Int(1)]), out)
     }
 }

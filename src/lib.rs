@@ -23,7 +23,7 @@ pub mod psi_macro;
 ///
 /// # fn main() {
 /// let grammar = psi!{
-///     start: a;
+///     start: a -> |o| Ok(o);
 ///
 ///     a: "a",
 ///        (b a);
@@ -35,17 +35,13 @@ pub mod psi_macro;
 ///
 /// let result = parser.parse(&grammar).expect("Failed to parse.");
 ///
-/// use psi::parse::parsed::ParseTree::*;
+/// use psi::parse::parsed::ParseObject::*;
 /// assert_eq!(result,
 ///     Rule("start".to_owned(),
 ///         vec![
 ///             Rule("a".to_owned(), vec![
-///                 Rule("b".to_owned(), vec![
-///                     Literal("b".to_owned())
-///                 ]),
-///                 Rule("a".to_owned(), vec![
-///                     Literal("a".to_owned())
-///                 ])
+///                 Literal("b".to_owned()),
+///                 Literal("a".to_owned())
 ///             ])
 ///         ]
 ///     )
@@ -289,12 +285,12 @@ mod tests {
             expr: ("-" expr) -> |o| Ok(Float(-o[1].as_float()?)),
                   expr;
             @prec = 20,
-            expr: (expr "+" expr) -> |o| Ok(Float(o[0].as_float()? + o[1].as_float()?)),
-                  (expr "-" expr) -> |o| Ok(Float(o[0].as_float()? - o[1].as_float()?)),
+            expr: (expr "+" expr) -> |o| Ok(Float(o[0].as_float()? + o[2].as_float()?)),
+                  (expr "-" expr) -> |o| Ok(Float(o[0].as_float()? - o[2].as_float()?)),
                   expr;
             @prec = 10,
-            expr: (expr "*" expr) -> |o| Ok(Float(o[0].as_float()? * o[1].as_float()?)),
-                  (expr "/" expr) -> |o| Ok(Float(o[0].as_float()? / o[1].as_float()?)),
+            expr: (expr "*" expr) -> |o| Ok(Float(o[0].as_float()? * o[2].as_float()?)),
+                  (expr "/" expr) -> |o| Ok(Float(o[0].as_float()? / o[2].as_float()?)),
                   expr;
             expr: number -> |o| Ok(o[0].clone()),
                   ("(" expr ")") -> |o| Ok(o.into_list()?.remove(1));
@@ -316,7 +312,7 @@ mod tests {
 
         let mut parser = Parser::<CharsInput>::new(input);
 
-        let result = parser.parse(&macro_grammar);
+        let result = parser.parse_rule_by_name(&macro_grammar, "start");
 
         if let Err(e) = result {
             eprintln!("ParseError:\n{:#?}", e);
@@ -326,6 +322,10 @@ mod tests {
         let parsed = result.unwrap();
 
         println!("Parsed:\n{:#?}", parsed);
+
+        let parsed = parsed
+            .transfrom()
+            .expect("Failed to transform the TreeBuffer.");
 
         assert_eq!(ParseObject::Float(expected_result), parsed);
 
