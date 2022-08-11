@@ -11,6 +11,8 @@ macro_rules! rulepart {
     }};
 }
 
+pub use rulepart;
+
 #[macro_export]
 // A vector of rules -- Either an empty vector (_), any list of tokens ({},[],()), or any single rule part.
 macro_rules! rule_vec {
@@ -46,6 +48,8 @@ macro_rules! rule_vec {
     }};
 
 }
+
+pub use rule_vec;
 
 #[macro_export]
 // The associativity -- left, right, or none/nonassoc
@@ -87,6 +91,11 @@ macro_rules! rule_entry {
                     $(if true {
                         use std::sync::Arc;
                         use uuid::Uuid;
+                        use $crate::parse::parsed::ParseObject;
+                        use ParseObject::*;
+                        use eyre;
+                        use eyre::{Result, ContextCompat};
+                        
                         let action = RuleAction {
                             inner: Arc::new($action),
                             id: Uuid::new_v4(),
@@ -126,6 +135,7 @@ macro_rules! rule_entry {
         })
     }};
 }
+pub use rule_entry;
 
 
 /// This macro can be used to generate a Psi Grammar.
@@ -136,7 +146,7 @@ macro_rules! rule_entry {
 ///
 /// # fn main() {
 /// let grammar = psi!{
-///     start: a;
+///     start: a -> |o| Ok(o);
 ///
 ///     a: "a",
 ///        (b a);
@@ -148,17 +158,13 @@ macro_rules! rule_entry {
 ///
 /// let result = parser.parse(&grammar).expect("Failed to parse.");
 ///
-/// use psi::parse::parsed::ParseTree::*;
+/// use psi::parse::parsed::ParseObject::*;
 /// assert_eq!(result,
 ///     Rule("start".to_owned(),
 ///         vec![
 ///             Rule("a".to_owned(), vec![
-///                 Rule("b".to_owned(), vec![
-///                     Literal("b".to_owned())
-///                 ]),
-///                 Rule("a".to_owned(), vec![
-///                     Literal("a".to_owned())
-///                 ])
+///                 Literal("b".to_owned()),
+///                 Literal("a".to_owned())
 ///             ])
 ///         ]
 ///     )
@@ -179,6 +185,7 @@ macro_rules! rules {
     ) => {{
         use std::collections::HashMap;
         use $crate::grammar::*;
+        use $crate::psi_macro::*;
 
 
         let rules = vec![
@@ -194,7 +201,7 @@ macro_rules! rules {
             ),*
         ];
 
-        let mut map: HashMap<String, Vec<RuleEntry>> = HashMap::new();
+        let mut map: HashMap<std::string::String, Vec<RuleEntry>> = HashMap::new();
 
         for (name, rule_entry) in rules {
             if map.contains_key(&name) {
@@ -239,7 +246,7 @@ mod tests {
             @prec left = 13,
             name: _,
                   a,
-                  [a "1"] -> |pt| ParseObject::ParseTree(pt);
+                  [a "1"] -> |x| Ok(x);
         );
 
         let rules = rules! {

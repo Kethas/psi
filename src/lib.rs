@@ -23,7 +23,7 @@ pub mod psi_macro;
 ///
 /// # fn main() {
 /// let grammar = psi!{
-///     start: a;
+///     start: a -> |o| Ok(o);
 ///
 ///     a: "a",
 ///        (b a);
@@ -35,17 +35,13 @@ pub mod psi_macro;
 ///
 /// let result = parser.parse(&grammar).expect("Failed to parse.");
 ///
-/// use psi::parse::parsed::ParseTree::*;
+/// use psi::parse::parsed::ParseObject::*;
 /// assert_eq!(result,
 ///     Rule("start".to_owned(),
 ///         vec![
 ///             Rule("a".to_owned(), vec![
-///                 Rule("b".to_owned(), vec![
-///                     Literal("b".to_owned())
-///                 ]),
-///                 Rule("a".to_owned(), vec![
-///                     Literal("a".to_owned())
-///                 ])
+///                 Literal("b".to_owned()),
+///                 Literal("a".to_owned())
 ///             ])
 ///         ]
 ///     )
@@ -61,7 +57,10 @@ mod tests {
     use crate::{
         grammar::{Grammar, RuleDef, RuleEntry, RulePart, Rules},
         input::CharsInput,
-        parse::{parsed::ParseTree, Parser},
+        parse::{
+            parsed::{ParseObject, ParseTree},
+            Parser,
+        },
     };
     use std::vec;
 
@@ -272,69 +271,29 @@ mod tests {
 
     fn macro_expr_grammar() -> Grammar {
         psi! {
-            start: expr;
+            start: expr -> |o| Ok(o[0].clone());
 
             digit_nz: "1", "2", "3", "4", "5", "6", "7", "8", "9";
             zero: "0";
             digit: zero,
                    digit_nz;
-            number: digit,
-                    (digit number);
+            digits: digit,
+                    (digit digits);
+            number: digits -> |o| Ok(Float(o[0].to_string().parse()?));
 
             @prec = 30,
-            expr: ("-" expr),
+            expr: ("-" expr) -> |o| Ok(Float(-o[1].as_float()?)),
                   expr;
             @prec = 20,
-            expr: (expr "+" expr),
-                  (expr "-" expr),
+            expr: (expr "+" expr) -> |o| Ok(Float(o[0].as_float()? + o[2].as_float()?)),
+                  (expr "-" expr) -> |o| Ok(Float(o[0].as_float()? - o[2].as_float()?)),
                   expr;
             @prec = 10,
-            expr: (expr "*" expr),
-                  (expr "/" expr),
+            expr: (expr "*" expr) -> |o| Ok(Float(o[0].as_float()? * o[2].as_float()?)),
+                  (expr "/" expr) -> |o| Ok(Float(o[0].as_float()? / o[2].as_float()?)),
                   expr;
-            expr: number,
-                  ("(" expr ")");
-        }
-    }
-
-    fn eval_expr(parsed: &ParseTree) -> f64 {
-        match parsed {
-            ParseTree::End => 0.0,
-
-            ParseTree::Rule(name, inner) if name == "expr@0" => match inner[0].to_string().as_str()
-            {
-                "(" => eval_expr(&inner[1]),
-                num => num.to_string().parse().unwrap(),
-            },
-
-            ParseTree::Rule(name, inner)
-                if inner.len() == 1
-                    && ["expr", "start"]
-                        .iter()
-                        .any(|x| name == x || name.starts_with(&format!("{x}@"))) =>
-            {
-                eval_expr(&inner[0])
-            }
-
-            ParseTree::Rule(name, inner) if name == "expr@30" => -eval_expr(&inner[1]),
-            ParseTree::Rule(name, inner) if name == "expr@20" => {
-                match inner[1].to_string().as_str() {
-                    "+" => eval_expr(&inner[0]) + eval_expr(&inner[2]),
-                    "-" => eval_expr(&inner[0]) - eval_expr(&inner[2]),
-
-                    _ => unreachable!(),
-                }
-            }
-            ParseTree::Rule(name, inner) if name == "expr@10" => {
-                match inner[1].to_string().as_str() {
-                    "*" => eval_expr(&inner[0]) * eval_expr(&inner[2]),
-                    "/" => eval_expr(&inner[0]) / eval_expr(&inner[2]),
-
-                    _ => unreachable!(),
-                }
-            }
-
-            x => panic!("Unreachable: {:#?}", x),
+            expr: number -> |o| Ok(o[0].clone()),
+                  ("(" expr ")") -> |o| Ok(o.into_list()?.remove(1));
         }
     }
 
@@ -343,22 +302,17 @@ mod tests {
         let compiled_grammar = compile_expr_grammar();
         let macro_grammar = macro_expr_grammar();
         println!(
-            "compiled:\n{:#?}\nmacro:\n{:#?}\n",
+            "compiled:\n{:?}\nmacro:\n{:?}\n",
             compiled_grammar, macro_grammar
         );
-        assert_eq!(compiled_grammar, macro_grammar);
-        //let expected_grammar = expr_grammar();
-
-        println!("Compiled Grammar:\n{:#?}", compiled_grammar);
-
-        //assert_eq!(expected_grammar, compiled_grammar);
+        //assert_eq!(compiled_grammar, macro_grammar);
 
         let input = "12+33*85+233".chars();
         let expected_result = 12.0 + 33.0 * 85.0 + 233.0;
 
         let mut parser = Parser::<CharsInput>::new(input);
 
-        let result = parser.parse(&macro_grammar);
+        let result = parser.parse_rule_by_name(&macro_grammar, "start");
 
         if let Err(e) = result {
             eprintln!("ParseError:\n{:#?}", e);
@@ -369,7 +323,11 @@ mod tests {
 
         println!("Parsed:\n{:#?}", parsed);
 
-        assert_eq!(expected_result, eval_expr(&parsed));
+        let parsed = parsed
+            .transfrom()
+            .expect("Failed to transform the TreeBuffer.");
+
+        assert_eq!(ParseObject::Float(expected_result), parsed);
 
         // great success! wawaweewa!
     }
