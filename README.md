@@ -2,7 +2,7 @@
 >
 > **Warning**
 >
-> This project is under development. It has many known bugs and missing features.
+> This project is under development. It has many known and unknown bugs and missing features.
 
 Psi is a parser aiming to trade performance for ease of use.
 
@@ -134,6 +134,7 @@ This isn't the best method, but it does work until there's a better alternative.
 ## Known issues
 
 - The current parsing implementation is recursive using function calls. This could be optimized to use loops instead.
+- Errors (`ParseError`) are not very straightforward.
 
 ## Examples
 
