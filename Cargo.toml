@@ -7,6 +7,8 @@ edition = "2021"
 license-file = "LICENSE"
 repository = "https://github.com/Kethas/psi"
 readme = "README.md"
+keywords = ["parser", "parsing"]
+categories = ["parsing"]
 
 include = [
     "**/*.rs",
