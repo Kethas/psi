@@ -94,6 +94,39 @@ Using the above code to parse "[John,John,Josh,Jimmy,Jane,Jeremiah]" will yield 
 
 The default functionality when a transformer isn't specified is to return the `Vec<ParseValue>` inside a `ParseValue::List`, or return the single value inside the `Vec` if it only has one value.
 
+You can additionally use a custom type for `ParseValue::Value` using `#[type = Type]`
+
+```rust
+use psi_parser::{rules, ParseValue};
+
+// Your type must implement these three traits
+#[derive(Debug, Clone, PartialEq)]
+enum Name {
+    John,
+    Jane,
+    Jeremiah,
+    Josh,
+    Jimmy
+}
+
+let rules = rules! {
+    // Declare that our custom type is Name
+    #[type = Name]
+
+    start {
+        (name)
+    }
+
+    name {
+        ("John") => |_| ParseValue::Value(Name::John);
+        ("Jane") => |_| ParseValue::Value(Name::Jane);
+        ("Jeremiah") => |_| ParseValue::Value(Name::Jeremiah);
+        ("Josh") => |_| ParseValue::Value(Name::Josh);
+        ("Jimmy") => |_| ParseValue::Value(Name::Jimmy);
+    }
+}
+```
+
 This isn't the best method, but it does work until there's a better alternative.
 
 ## Known issues

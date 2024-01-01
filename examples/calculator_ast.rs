@@ -2,8 +2,20 @@ use std::io::{stdin, stdout, Write};
 
 use psi_parser::*;
 
+#[derive(Debug, Clone, PartialEq)]
+enum ExprAst {
+    Int(i32),
+    Float(f32),
+    Add(Box<ExprAst>, Box<ExprAst>),
+    Sub(Box<ExprAst>, Box<ExprAst>),
+    Mul(Box<ExprAst>, Box<ExprAst>),
+    Div(Box<ExprAst>, Box<ExprAst>),
+}
+
 fn main() {
     let rules = rules! {
+        #[type = ExprAst]
+
         start {
             (ws term ws) => |v| v[1].clone();
         }
@@ -21,13 +33,13 @@ fn main() {
             (factor)
             (term ws "+" ws term) => |v| {
                 match (&v[0], &v[4]) {
-                    (ParseValue::Float(a), ParseValue::Float(b)) => ParseValue::Float(a + b),
+                    (ParseValue::Value(a), ParseValue::Value(b)) => ParseValue::Value(ExprAst::Add(Box::new(a.clone()), Box::new(b.clone()))),
                     _ => unreachable!()
                 }
             };
             (term ws "-" ws term) => |v| {
                 match (&v[0], &v[4]) {
-                    (ParseValue::Float(a), ParseValue::Float(b)) => ParseValue::Float(a - b),
+                    (ParseValue::Value(a), ParseValue::Value(b)) => ParseValue::Value(ExprAst::Sub(Box::new(a.clone()), Box::new(b.clone()))),
                     _ => unreachable!()
                 }
             };
@@ -38,13 +50,13 @@ fn main() {
             ("(" ws expr ws ")") => |v| v[2].clone();
             (factor ws "*" ws factor) => |v| {
                 match (&v[0], &v[4]) {
-                    (ParseValue::Float(a), ParseValue::Float(b)) => ParseValue::Float(a * b),
+                    (ParseValue::Value(a), ParseValue::Value(b)) => ParseValue::Value(ExprAst::Mul(Box::new(a.clone()), Box::new(b.clone()))),
                     _ => unreachable!()
                 }
             };
             (factor ws "/" ws factor) => |v| {
                 match (&v[0], &v[4]) {
-                    (ParseValue::Float(a), ParseValue::Float(b)) => ParseValue::Float(a / b),
+                    (ParseValue::Value(a), ParseValue::Value(b)) => ParseValue::Value(ExprAst::Div(Box::new(a.clone()), Box::new(b.clone()))),
                     _ => unreachable!()
                 }
             };
@@ -88,11 +100,11 @@ fn main() {
 
         float {
             (int) => |v| match &v[0] {
-                ParseValue::String(s) => ParseValue::Float(s.parse().unwrap()),
+                ParseValue::String(s) => ParseValue::Value(ExprAst::Int(s.parse().unwrap())),
                 _ => unreachable!()
             };
             (int "." digits) => |v| match (&v[0], &v[2]) {
-                (ParseValue::String(s0), ParseValue::String(s1)) => ParseValue::Float(format!("{s0}.{s1}").parse().unwrap()),
+                (ParseValue::String(s0), ParseValue::String(s1)) => ParseValue::Value(ExprAst::Float(format!("{s0}.{s1}").parse().unwrap())),
                 _ => unreachable!()
             };
         }
@@ -120,7 +132,7 @@ fn main() {
         }
     };
 
-    println!("Enter simple arithmetic to be calculated or 'exit' to exit.");
+    println!("Enter a simple arithmetic to be converted into AST or 'exit' to exit.");
 
     let stdin = stdin();
     let mut stdout = stdout();
@@ -142,8 +154,8 @@ fn main() {
         let parse_result = rules.parse_entire("start", line);
 
         match parse_result {
-            Ok(ParseValue::Float(value)) => println!("= {value}"),
-            Err(error) => println!("Error {error:#?}"),
+            Ok(ParseValue::Value(value)) => println!("AST: {value:#?}"),
+            Err(error) => println!("Error: {error:#?}"),
             Ok(value) => println!("{value:#?}"),
         }
     }

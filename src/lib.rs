@@ -1,17 +1,22 @@
 use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},
+    fmt::Debug,
     str::Chars,
 };
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum ParseValue {
+pub enum ParseValue<T>
+where
+    T: Clone + Debug + PartialEq,
+{
     Token(String),
-    List(Vec<ParseValue>),
+    List(Vec<ParseValue<T>>),
     Integer(i32),
     Float(f32),
     String(String),
-    Map(HashMap<String, ParseValue>),
+    Map(HashMap<String, ParseValue<T>>),
+    Value(T),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -32,9 +37,11 @@ pub enum ParseError {
     },
 }
 
-pub type ParseResult<'a> = Result<Option<(ParseValue, Input<'a>)>, ParseError>;
+pub type ParseResult<'a, T> =
+    Result<Option<(ParseValue<T>, Input<'a>)>, ParseError>;
 
-pub type Transformer = Box<dyn Fn(&Vec<ParseValue>) -> ParseValue>;
+pub type Transformer<T> =
+    Box<dyn Fn(&Vec<ParseValue<T>>) -> ParseValue<T>>;
 
 #[derive(Clone)]
 pub struct Input<'a> {
@@ -102,26 +109,26 @@ pub enum RulePart {
     Recurse,
 }
 
-pub enum RuleTree {
+pub enum RuleTree<T: Clone + Debug + PartialEq> {
     Part {
         part: RulePart,
-        nexts: Vec<RuleTree>,
+        nexts: Vec<RuleTree<T>>,
     },
 
     End {
-        transformer: Option<Transformer>,
+        transformer: Option<Transformer<T>>,
     },
 }
 
-impl RuleTree {
+impl<T: Clone + Debug + PartialEq> RuleTree<T> {
     fn parse<'a>(
         &self,
-        rules: &Rules,
+        rules: &Rules<T>,
         current_rule: &str,
         input: Input<'a>,
-        buffer: &Vec<ParseValue>,
+        buffer: &Vec<ParseValue<T>>,
         recursive: bool,
-    ) -> ParseResult<'a> {
+    ) -> ParseResult<'a, T> {
         match self {
             RuleTree::Part { part, nexts } => match part {
                 RulePart::Term(literal) => {
@@ -231,14 +238,14 @@ impl RuleTree {
     }
 }
 
-pub struct Rule {
+pub struct Rule<T: Clone + Debug + PartialEq> {
     pub name: String,
     pub parts: Vec<RulePart>,
-    pub transformer: Option<Transformer>,
+    pub transformer: Option<Transformer<T>>,
 }
 
-impl From<Rule> for RuleTree {
-    fn from(val: Rule) -> Self {
+impl<T: Clone + Debug + PartialEq> From<Rule<T>> for RuleTree<T> {
+    fn from(val: Rule<T>) -> Self {
         let mut tree = RuleTree::End {
             transformer: val.transformer,
         };
@@ -265,11 +272,11 @@ impl From<Rule> for RuleTree {
     }
 }
 
-pub struct Rules(HashMap<String, Vec<RuleTree>>);
+pub struct Rules<T: Clone + Debug + PartialEq>(HashMap<String, Vec<RuleTree<T>>>);
 
-impl Rules {
-    pub fn new(rules: impl IntoIterator<Item = Rule>) -> Self {
-        let mut map: HashMap<String, Vec<RuleTree>> = HashMap::new();
+impl<T: Clone + Debug + PartialEq> Rules<T> {
+    pub fn new(rules: impl IntoIterator<Item = Rule<T>>) -> Self {
+        let mut map: HashMap<String, Vec<RuleTree<T>>> = HashMap::new();
 
         for rule in rules {
             match map.entry(rule.name.clone()) {
@@ -293,7 +300,7 @@ impl Rules {
         &self,
         start_rule: &str,
         input: impl Into<Input<'a>>,
-    ) -> Result<ParseValue, ParseError> {
+    ) -> Result<ParseValue<T>, ParseError> {
         self.parse_rule(start_rule, input.into(), vec![], false)
             .and_then(|res| match res {
                 Some((value, mut input)) => {
@@ -319,7 +326,7 @@ impl Rules {
         &self,
         start_rule: &str,
         input: impl Into<Input<'a>>,
-    ) -> Result<ParseValue, ParseError> {
+    ) -> Result<ParseValue<T>, ParseError> {
         self.parse_rule(start_rule, input.into(), vec![], false)
             .map(|res| {
                 res.map(|x| x.0)
@@ -331,9 +338,9 @@ impl Rules {
         &self,
         rule_name: &str,
         input: Input<'a>,
-        buffer: Vec<ParseValue>,
+        buffer: Vec<ParseValue<T>>,
         recursive: bool,
-    ) -> ParseResult<'a> {
+    ) -> ParseResult<'a, T> {
         self.0
             .get(rule_name)
             .ok_or_else(|| ParseError::RuleNotFound {
@@ -343,14 +350,14 @@ impl Rules {
     }
 }
 
-fn parse_rule_trees<'a>(
-    rules: &Rules,
+fn parse_rule_trees<'a, T: Clone + Debug + PartialEq>(
+    rules: &Rules<T>,
     current_rule: &str,
-    rule_trees: &[RuleTree],
+    rule_trees: &[RuleTree<T>],
     input: Input<'a>,
-    buffer: Vec<ParseValue>,
+    buffer: Vec<ParseValue<T>>,
     recursive: bool,
-) -> ParseResult<'a> {
+) -> ParseResult<'a, T> {
     let mut errors = HashSet::new();
     for tree in rule_trees {
         match tree.parse(rules, current_rule, input.clone(), &buffer, recursive) {
@@ -374,13 +381,13 @@ fn parse_rule_trees<'a>(
     }
 }
 
-fn parse_recursively<'a>(
-    rules: &Rules,
+fn parse_recursively<'a, T: Clone + Debug + PartialEq>(
+    rules: &Rules<T>,
     current_rule: &str,
-    rule_trees: &[RuleTree],
+    rule_trees: &[RuleTree<T>],
     input: Input<'a>,
-    buffer: &Vec<ParseValue>,
-) -> Option<(ParseValue, Input<'a>)> {
+    buffer: &Vec<ParseValue<T>>,
+) -> Option<(ParseValue<T>, Input<'a>)> {
     match parse_rule_trees(
         rules,
         current_rule,
@@ -401,10 +408,10 @@ fn parse_recursively<'a>(
     }
 }
 
-fn smush(trees: Vec<RuleTree>) -> Vec<RuleTree> {
+fn smush<T: Clone + Debug + PartialEq>(trees: Vec<RuleTree<T>>) -> Vec<RuleTree<T>> {
     let mut v = trees
         .into_iter()
-        .fold(vec![], |mut trees: Vec<RuleTree>, tree| match tree {
+        .fold(vec![], |mut trees: Vec<RuleTree<T>>, tree| match tree {
             RuleTree::Part { part, nexts } => {
                 for t in &mut trees {
                     match t {
@@ -475,10 +482,25 @@ macro_rules! rule_part {
 macro_rules! rule {
     ($name:ident: ($($tt:tt)*) $(=> $transformer:expr)?) => {{
         #[allow(unused_variables)]
-        let transformer: Option<Box<dyn Fn(&Vec<ParseValue>) -> ParseValue>> = None;
+        let transformer: Option<Box<dyn Fn(&Vec<ParseValue<()>>) -> ParseValue<()>>> = None;
 
         $(
-            let transformer: Option<Box<dyn Fn(&Vec<ParseValue>) -> ParseValue>> = Some(Box::new($transformer));
+            let transformer: Option<Box<dyn Fn(&Vec<ParseValue<()>>) -> ParseValue<()>>> = Some(Box::new($transformer));
+        )?
+
+        Rule {
+            name: stringify!($name).to_owned(),
+            parts: vec![$(rule_part!($tt)),*],
+            transformer
+        }
+    }};
+
+    (#[type = $type:ty] $name:ident: ($($tt:tt)*) $(=> $transformer:expr)?) => {{
+        #[allow(unused_variables)]
+        let transformer: Option<Box<dyn Fn(&Vec<ParseValue<$type>>) -> ParseValue<$type>>> = None;
+
+        $(
+            let transformer: Option<Box<dyn Fn(&Vec<ParseValue<$type>>) -> ParseValue<$type>>> = Some(Box::new($transformer));
         )?
 
         Rule {
@@ -508,7 +530,28 @@ macro_rules! rules {
             rules.push(rule!($rule_name: ($($tt)*) $(=> $transformer)?).into());
         )*)*
 
-        Rules::new(rules)
+        Rules::<()>::new(rules)
+    }};
+
+    (
+        #[type = $type:ty]
+
+        $(
+            $rule_name:ident {
+                $(
+                    ($( $tt:tt )*)
+                    $(=> $transformer:expr;)?
+                )+
+            }
+        )+
+    ) => {{
+        let mut rules = Vec::new();
+
+        $($(
+            rules.push(rule!(#[type = $type] $rule_name: ($($tt)*) $(=> $transformer)?).into());
+        )*)*
+
+        Rules::<$type>::new(rules)
     }};
 }
 
