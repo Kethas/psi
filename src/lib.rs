@@ -4,6 +4,36 @@ use std::{
     str::Chars,
 };
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum ParseValue {
+    Token(String),
+    List(Vec<ParseValue>),
+    Integer(i32),
+    Float(f32),
+    String(String),
+    Map(HashMap<String, ParseValue>),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub enum ParseError {
+    RuleNotFound {
+        rule_name: String,
+    },
+    UnexpectedChar {
+        current_rule: String,
+        char: Option<char>,
+        pos: usize,
+    },
+    MultipleErrors {
+        current_rule: String,
+        errors: Vec<ParseError>,
+    },
+}
+
+pub type ParseResult<'a> = Result<Option<(ParseValue, Input<'a>)>, ParseError>;
+
+pub type Transformer = Box<dyn Fn(&Vec<ParseValue>) -> ParseValue>;
+
 #[derive(Clone)]
 pub struct Input<'a> {
     source: &'a str,
@@ -57,7 +87,7 @@ pub enum RuleTree {
     },
 
     End {
-        transformer: Option<Box<dyn Fn(&Vec<ParseValue>) -> ParseValue>>,
+        transformer: Option<Transformer>,
     },
 }
 
@@ -69,12 +99,10 @@ impl RuleTree {
         input: Input<'a>,
         buffer: &Vec<ParseValue>,
         recursive: bool,
-    ) -> Result<Option<(ParseValue, Input<'a>)>, ParseError> {
+    ) -> ParseResult<'a> {
         match self {
             RuleTree::Part { part, nexts } => match part {
                 RulePart::Term(literal) => {
-                    println!("term: \"{literal}\"");
-
                     let mut literal_chars = literal.chars();
 
                     let mut input = input;
@@ -83,8 +111,6 @@ impl RuleTree {
                         let mut i = input.clone();
 
                         let (i_char, l_char) = (i.next(), literal_chars.next());
-                        println!("({i_char:?}, {l_char:?})");
-
                         match (i_char, l_char) {
                             (None, None) => break,
                             (None, Some(_)) => {
@@ -115,30 +141,18 @@ impl RuleTree {
 
                     parse_rule_trees(rules, current_rule, nexts, input, buffer, recursive)
                 }
-                RulePart::NonTerm(rule_name) => {
-                    println!("nonterm: {rule_name}");
-                    rules
-                        .parse_rule(rule_name, input, vec![], false)
-                        .and_then(|res| match res {
-                            Some((parse_value, input)) => {
-                                let mut buffer = buffer.clone();
-                                buffer.push(parse_value);
+                RulePart::NonTerm(rule_name) => rules
+                    .parse_rule(rule_name, input, vec![], false)
+                    .and_then(|res| match res {
+                        Some((parse_value, input)) => {
+                            let mut buffer = buffer.clone();
+                            buffer.push(parse_value);
 
-                                parse_rule_trees(
-                                    rules,
-                                    current_rule,
-                                    nexts,
-                                    input,
-                                    buffer,
-                                    recursive,
-                                )
-                            }
-                            None => Ok(None),
-                        })
-                }
+                            parse_rule_trees(rules, current_rule, nexts, input, buffer, recursive)
+                        }
+                        None => Ok(None),
+                    }),
                 RulePart::Recurse => {
-                    println!("Recurse");
-
                     if recursive {
                         Ok(None)
                     } else {
@@ -190,9 +204,9 @@ impl RuleTree {
 }
 
 pub struct Rule {
-    name: String,
-    parts: Vec<RulePart>,
-    transformer: Option<Box<dyn Fn(&Vec<ParseValue>) -> ParseValue>>,
+    pub name: String,
+    pub parts: Vec<RulePart>,
+    pub transformer: Option<Transformer>,
 }
 
 impl From<Rule> for RuleTree {
@@ -226,6 +240,49 @@ impl From<Rule> for RuleTree {
 pub struct Rules(HashMap<String, Vec<RuleTree>>);
 
 impl Rules {
+    pub fn new(rules: impl IntoIterator<Item = Rule>) -> Self {
+        let mut map: HashMap<String, Vec<RuleTree>> = HashMap::new();
+
+        for rule in rules {
+            match map.entry(rule.name.clone()) {
+                std::collections::hash_map::Entry::Occupied(mut o) => {
+                    o.get_mut().push(rule.into());
+                }
+                std::collections::hash_map::Entry::Vacant(v) => {
+                    v.insert(vec![rule.into()]);
+                }
+            }
+        }
+
+        Rules(
+            map.into_iter()
+                .map(|(rule_name, rule_trees)| (rule_name, smush(rule_trees)))
+                .collect(),
+        )
+    }
+
+    pub fn parse_entire<'a>(
+        &self,
+        start_rule: &str,
+        input: impl Into<Input<'a>>,
+    ) -> Result<ParseValue, ParseError> {
+        self.parse_rule(start_rule, input.into(), vec![], false)
+            .and_then(|res| match res {
+                Some((value, mut input)) => {
+                    if let Some(char) = input.next() {
+                        Err(ParseError::UnexpectedChar {
+                            current_rule: "<parse_entire>".to_owned(),
+                            char: Some(char),
+                            pos: input.pos() - 1,
+                        })
+                    } else {
+                        Ok(value)
+                    }
+                }
+                None => Ok(ParseValue::List(Vec::new())),
+            })
+    }
+
     pub fn parse<'a>(
         &self,
         start_rule: &str,
@@ -244,7 +301,7 @@ impl Rules {
         input: Input<'a>,
         buffer: Vec<ParseValue>,
         recursive: bool,
-    ) -> Result<Option<(ParseValue, Input<'a>)>, ParseError> {
+    ) -> ParseResult<'a> {
         self.0
             .get(rule_name)
             .ok_or_else(|| ParseError::RuleNotFound {
@@ -261,7 +318,7 @@ fn parse_rule_trees<'a>(
     input: Input<'a>,
     buffer: Vec<ParseValue>,
     recursive: bool,
-) -> Result<Option<(ParseValue, Input<'a>)>, ParseError> {
+) -> ParseResult<'a> {
     let mut errors = HashSet::new();
     for tree in rule_trees {
         match tree.parse(rules, current_rule, input.clone(), &buffer, recursive) {
@@ -278,7 +335,7 @@ fn parse_rule_trees<'a>(
     } else if errors.len() == 1 {
         Err(errors.drain().next().unwrap())
     } else {
-        Err(ParseError::Multiple {
+        Err(ParseError::MultipleErrors {
             current_rule: current_rule.to_owned(),
             errors: errors.into_iter().collect(),
         })
@@ -310,32 +367,6 @@ fn parse_recursively<'a>(
         Ok(Some((v, input))) => parse_recursively(rules, current_rule, rule_trees, input, &vec![v]),
         Ok(None) => None,
     }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum ParseValue {
-    Token(String),
-    List(Vec<ParseValue>),
-    Integer(i32),
-    Float(f32),
-    String(String),
-    Map(HashMap<String, ParseValue>),
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum ParseError {
-    RuleNotFound {
-        rule_name: String,
-    },
-    UnexpectedChar {
-        current_rule: String,
-        char: Option<char>,
-        pos: usize,
-    },
-    Multiple {
-        current_rule: String,
-        errors: Vec<ParseError>,
-    },
 }
 
 fn smush(trees: Vec<RuleTree>) -> Vec<RuleTree> {
@@ -395,6 +426,8 @@ fn smush(trees: Vec<RuleTree>) -> Vec<RuleTree> {
     v
 }
 
+#[allow(dead_code)]
+#[macro_export]
 macro_rules! rule_part {
     ($lit:literal) => {
         RulePart::Term(String::from($lit))
@@ -405,6 +438,8 @@ macro_rules! rule_part {
     };
 }
 
+#[allow(dead_code)]
+#[macro_export]
 macro_rules! rule {
     ($name:ident: ($($tt:tt)*) $(=> $transformer:expr)?) => {{
         #[allow(unused_variables)]
@@ -422,6 +457,8 @@ macro_rules! rule {
     }};
 }
 
+#[allow(dead_code)]
+#[macro_export]
 macro_rules! rules {
     (
         $(
@@ -433,24 +470,18 @@ macro_rules! rules {
             }
         )+
     ) => {{
-        let mut rules = HashMap::new();
+        let mut rules = Vec::new();
 
-        $(
-            rules.insert(stringify!($rule_name).to_owned(), vec![$(rule!($rule_name: ($($tt)*) $(=> $transformer)?).into()),*]);
-        )*
+        $($(
+            rules.push(rule!($rule_name: ($($tt)*) $(=> $transformer)?).into());
+        )*)*
 
-        Rules(rules
-            .into_iter()
-            .map(|(rule_name, rule_trees)| (rule_name, smush(rule_trees)))
-            .collect()
-        )
+        Rules::new(rules)
     }};
 }
 
 #[cfg(test)]
 mod tests {
-    use core::panic;
-
     use super::*;
 
     #[test]
