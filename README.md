@@ -44,7 +44,7 @@ let rules = rules! {
 let result = rules.parse_entire("start", "Hello, Jimmy!");
 ```
 
-Running the above code will yield a `ParseValue` representing the list `["Hello, ", "Jimmy", "!"]`.
+Running the above code will yield a `ParseValue::List` representing the list `["Hello, ", "Jimmy", "!"]` as `ParseValue::Token`s.
 In order to make the parsed output more useful, transformer actions can be attributed to each rule definition using `=>`.
 These transformer actions are expressions of the type `Fn(&Vec<ParseValue>) -> ParseValue`.
 Currently, the best way to use these actions is to match on indices and clone when needed.
