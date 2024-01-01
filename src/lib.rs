@@ -38,7 +38,6 @@ pub type Transformer = Box<dyn Fn(&Vec<ParseValue>) -> ParseValue>;
 
 #[derive(Clone)]
 pub struct Input<'a> {
-    source: &'a str,
     chars: Chars<'a>,
     pos: usize,
     col: usize,
@@ -46,10 +45,9 @@ pub struct Input<'a> {
 }
 
 impl<'a> Input<'a> {
-    pub fn new(source: &'a str) -> Self {
+    pub fn new(chars: Chars<'a>) -> Self {
         Self {
-            source,
-            chars: source.chars(),
+            chars,
             pos: 0,
             col: 1,
             row: 1,
@@ -77,14 +75,22 @@ impl<'a> Input<'a> {
     pub fn row_col(&self) -> (usize, usize) {
         (self.row, self.col)
     }
-
-    pub fn source(&self) -> &'a str {
-        self.source
-    }
 }
 
 impl<'a> From<&'a str> for Input<'a> {
     fn from(value: &'a str) -> Self {
+        Self::new(value.chars())
+    }
+}
+
+impl<'a> From<&'a String> for Input<'a> {
+    fn from(value: &'a String) -> Self {
+        Self::new(value.chars())
+    }
+}
+
+impl<'a> From<Chars<'a>> for Input<'a> {
+    fn from(value: Chars<'a>) -> Self {
         Self::new(value)
     }
 }
