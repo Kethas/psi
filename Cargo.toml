@@ -1,21 +1,15 @@
 [package]
-name = "psi"
-version = "0.1.1"
+name = "psi-parser"
+description = "A parser aiming to trade performance for ease of use."
+authors = ["Kethas <kethas@asphyx.dev>"]
+version = "0.2.0"
 edition = "2021"
+license-file = "LICENSE"
+repository = "https://github.com/Kethas/psi"
+readme = "README.md"
+keywords = ["parser", "parsing"]
+categories = ["parsing"]
 
-
-[[bin]]
-name = "psi"
-path = "src/bin/main.rs"
-
-[lib]
-name = "psi"
-path = "src/lib.rs"
-
-
+include = ["**/*.rs", "Cargo.toml"]
 
 [dependencies]
-dyn-clonable = "0.9.0"
-eyre = "0.6.8"
-lazy_static = "1.4.0"
-uuid = { version = "1.1.2", features = ["v4", "fast-rng"] }

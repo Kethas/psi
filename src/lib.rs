@@ -1,334 +1,796 @@
-mod utils;
+use std::{
+    cmp::Ordering,
+    collections::{HashMap, HashSet},
+    fmt::Debug,
+    str::Chars,
+};
 
-//TODO: expand input types and optimize their cloning efficiency
-pub mod input;
-pub use input::{CharsInput, Input};
+pub mod prelude {
+    pub use super::{
+        rule, rules, IntoParseValue as _, ParseError, ParseResult, ParseValue, Rule, Rules,
+        Transformer,
+    };
+}
 
-//TODO: split into grammar and rules, maybe grammar > rules with pub use Rules
-pub mod grammar;
-pub use grammar::{Grammar, Rules};
+// Parsing Result Structs
 
-//TODO: make a non-recursive parsing function
-pub mod parse;
-pub use parse::Parser;
+#[derive(Clone, Debug, PartialEq)]
+pub enum ParseValue<T>
+where
+    T: Clone + Debug + PartialEq,
+{
+    Token(String),
+    List(Vec<ParseValue<T>>),
+    Integer(i32),
+    Float(f32),
+    String(String),
+    Map(HashMap<String, ParseValue<T>>),
+    Value(T),
+}
 
-#[macro_use]
-pub mod psi_macro;
+impl<T: Clone + Debug + PartialEq> From<Vec<ParseValue<T>>> for ParseValue<T> {
+    fn from(value: Vec<ParseValue<T>>) -> Self {
+        ParseValue::List(value)
+    }
+}
 
-/// This macro can be used to generate a Psi Grammar.
-/// Example:
-/// ```
-/// # #[macro_use] extern crate psi;
-/// use psi::*;
-///
-/// # fn main() {
-/// let grammar = psi!{
-///     start: a -> |o| Ok(o);
-///
-///     a: "a",
-///        (b a);
-///     b: "b";
-/// };
-///
-/// let source = "ba".chars();
-/// let mut parser = Parser::<CharsInput>::new(source);
-///
-/// let result = parser.parse(&grammar).expect("Failed to parse.");
-///
-/// use psi::parse::parsed::ParseObject::*;
-/// assert_eq!(result,
-///     Rule("start".to_owned(),
-///         vec![
-///             Rule("a".to_owned(), vec![
-///                 Literal("b".to_owned()),
-///                 Literal("a".to_owned())
-///             ])
-///         ]
-///     )
-/// )
-/// # }
-///
-/// ```
-pub use psi_macro::rules as psi;
+impl<T: Clone + Debug + PartialEq> From<i32> for ParseValue<T> {
+    fn from(value: i32) -> Self {
+        ParseValue::Integer(value)
+    }
+}
+
+impl<T: Clone + Debug + PartialEq> From<f32> for ParseValue<T> {
+    fn from(value: f32) -> Self {
+        ParseValue::Float(value)
+    }
+}
+
+impl<T: Clone + Debug + PartialEq> From<String> for ParseValue<T> {
+    fn from(value: String) -> Self {
+        ParseValue::String(value)
+    }
+}
+
+impl<T: Clone + Debug + PartialEq> From<HashMap<String, ParseValue<T>>> for ParseValue<T> {
+    fn from(value: HashMap<String, ParseValue<T>>) -> Self {
+        ParseValue::Map(value)
+    }
+}
+
+pub trait IntoParseValue: Clone + Debug + PartialEq {
+    fn into_value(self) -> ParseValue<Self>;
+}
+
+impl<T: Clone + Debug + PartialEq> IntoParseValue for T {
+    fn into_value(self) -> ParseValue<Self> {
+        ParseValue::Value(self)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub enum ParseError {
+    RuleNotFound {
+        rule_name: String,
+    },
+    UnexpectedChar {
+        current_rule: String,
+        char: Option<char>,
+        pos: usize,
+        row: usize,
+        col: usize,
+    },
+    MultipleErrors {
+        current_rule: String,
+        errors: Vec<ParseError>,
+    },
+}
+
+// Long Type Aliases
+
+pub type ParseResult<'a, T> = Result<Option<(ParseValue<T>, Input<'a>)>, ParseError>;
+
+pub type Transformer<T> = Box<dyn Fn(&Vec<ParseValue<T>>) -> ParseValue<T>>;
+
+// Input
+
+#[derive(Clone)]
+pub struct Input<'a> {
+    chars: Chars<'a>,
+    pos: usize,
+    col: usize,
+    row: usize,
+}
+
+impl<'a> Input<'a> {
+    pub fn new(chars: Chars<'a>) -> Self {
+        Self {
+            chars,
+            pos: 0,
+            col: 1,
+            row: 1,
+        }
+    }
+
+    #[allow(clippy::should_implement_trait)]
+    pub fn next(&mut self) -> Option<char> {
+        self.chars.next().map(|c| {
+            self.pos += 1;
+
+            if c == '\n' {
+                self.row += 1;
+                self.col = 1;
+            }
+
+            c
+        })
+    }
+
+    pub fn pos(&self) -> usize {
+        self.pos
+    }
+
+    pub fn row_col(&self) -> (usize, usize) {
+        (self.row, self.col)
+    }
+}
+
+impl<'a> From<&'a str> for Input<'a> {
+    fn from(value: &'a str) -> Self {
+        Self::new(value.chars())
+    }
+}
+
+impl<'a> From<&'a String> for Input<'a> {
+    fn from(value: &'a String) -> Self {
+        Self::new(value.chars())
+    }
+}
+
+impl<'a> From<Chars<'a>> for Input<'a> {
+    fn from(value: Chars<'a>) -> Self {
+        Self::new(value)
+    }
+}
+
+// Grammar
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum RulePart {
+    Term(String),
+    NonTerm(String),
+    Recurse,
+}
+
+pub enum RuleTree<T: Clone + Debug + PartialEq> {
+    Part {
+        part: RulePart,
+        nexts: Vec<RuleTree<T>>,
+    },
+
+    End {
+        transformer: Option<Transformer<T>>,
+    },
+}
+
+impl<T: Clone + Debug + PartialEq> RuleTree<T> {
+    fn parse<'a>(
+        &self,
+        rules: &Rules<T>,
+        current_rule: &str,
+        input: Input<'a>,
+        buffer: &Vec<ParseValue<T>>,
+        recursive: bool,
+    ) -> ParseResult<'a, T> {
+        match self {
+            RuleTree::Part { part, nexts } => match part {
+                RulePart::Term(literal) => {
+                    let mut literal_chars = literal.chars();
+
+                    let mut input = input;
+
+                    loop {
+                        let mut i = input.clone();
+
+                        let (row, col) = i.row_col();
+
+                        let (i_char, l_char) = (i.next(), literal_chars.next());
+                        match (i_char, l_char) {
+                            (None, None) => break,
+                            (None, Some(_)) => {
+                                return Err(ParseError::UnexpectedChar {
+                                    current_rule: current_rule.to_owned(),
+                                    char: None,
+                                    pos: i.pos(),
+                                    row,
+                                    col,
+                                })
+                            }
+                            (Some(_), None) => break,
+                            (Some(c0), Some(c1)) if c0 == c1 => {}
+                            (char @ Some(_), Some(_)) => {
+                                return Err(ParseError::UnexpectedChar {
+                                    current_rule: current_rule.to_owned(),
+                                    char,
+                                    pos: i.pos() - 1,
+                                    row,
+                                    col,
+                                })
+                            }
+                        }
+
+                        input = i;
+                    }
+
+                    let parse_value = ParseValue::Token(literal.clone());
+
+                    let mut buffer = buffer.clone();
+                    buffer.push(parse_value);
+
+                    rules.parse_rule_trees(current_rule, nexts, input, buffer, recursive)
+                }
+                RulePart::NonTerm(rule_name) => rules
+                    .parse_rule(rule_name, input, vec![], false)
+                    .and_then(|res| match res {
+                        Some((parse_value, input)) => {
+                            let mut buffer = buffer.clone();
+                            buffer.push(parse_value);
+
+                            rules.parse_rule_trees(current_rule, nexts, input, buffer, recursive)
+                        }
+                        None => Ok(None),
+                    }),
+                RulePart::Recurse => {
+                    if recursive {
+                        Ok(None)
+                    } else {
+                        rules
+                            .parse_rule(current_rule, input, buffer.clone(), true)
+                            .map(|res| {
+                                res.and_then(|(parse_value, input)| {
+                                    let mut buffer = buffer.clone();
+                                    buffer.push(parse_value);
+
+                                    match rules.parse_recursively(
+                                        current_rule,
+                                        nexts,
+                                        input.clone(),
+                                        &buffer,
+                                    ) {
+                                        None => Some((
+                                            if buffer.len() == 1 {
+                                                buffer.remove(0)
+                                            } else {
+                                                ParseValue::List(buffer)
+                                            },
+                                            input,
+                                        )),
+                                        res => res,
+                                    }
+                                })
+                            })
+                    }
+                }
+            },
+            RuleTree::End { transformer } => {
+                let res = match transformer {
+                    Some(transformer) => transformer(buffer),
+                    None => {
+                        if buffer.len() == 1 {
+                            buffer[0].clone()
+                        } else {
+                            ParseValue::List(buffer.clone())
+                        }
+                    }
+                };
+
+                Ok(Some((res, input)))
+            }
+        }
+    }
+}
+
+pub struct Rule<T: Clone + Debug + PartialEq> {
+    pub name: String,
+    pub parts: Vec<RulePart>,
+    pub transformer: Option<Transformer<T>>,
+}
+
+impl<T: Clone + Debug + PartialEq> From<Rule<T>> for RuleTree<T> {
+    fn from(val: Rule<T>) -> Self {
+        let mut tree = RuleTree::End {
+            transformer: val.transformer,
+        };
+
+        for part in val.parts.into_iter().rev() {
+            let part = match part {
+                RulePart::Recurse => RulePart::NonTerm(val.name.clone()),
+                p => p,
+            };
+
+            tree = RuleTree::Part {
+                part,
+                nexts: vec![tree],
+            };
+        }
+
+        if let RuleTree::Part { part, .. } = &mut tree {
+            if part == &RulePart::NonTerm(val.name) {
+                *part = RulePart::Recurse;
+            }
+        }
+
+        tree
+    }
+}
+
+pub struct Rules<T: Clone + Debug + PartialEq>(HashMap<String, Vec<RuleTree<T>>>);
+
+impl<T: Clone + Debug + PartialEq> Rules<T> {
+    pub fn new(rules: impl IntoIterator<Item = Rule<T>>) -> Self {
+        let mut map: HashMap<String, Vec<RuleTree<T>>> = HashMap::new();
+
+        for rule in rules {
+            match map.entry(rule.name.clone()) {
+                std::collections::hash_map::Entry::Occupied(mut o) => {
+                    o.get_mut().push(rule.into());
+                }
+                std::collections::hash_map::Entry::Vacant(v) => {
+                    v.insert(vec![rule.into()]);
+                }
+            }
+        }
+
+        Rules(
+            map.into_iter()
+                .map(|(rule_name, rule_trees)| (rule_name, Self::smush(rule_trees)))
+                .collect(),
+        )
+    }
+
+    pub fn parse_entire<'a>(
+        &self,
+        start_rule: &str,
+        input: impl Into<Input<'a>>,
+    ) -> Result<ParseValue<T>, ParseError> {
+        self.parse_rule(start_rule, input.into(), vec![], false)
+            .and_then(|res| match res {
+                Some((value, mut input)) => {
+                    let (row, col) = input.row_col();
+
+                    if let Some(char) = input.next() {
+                        Err(ParseError::UnexpectedChar {
+                            current_rule: "<parse_entire>".to_owned(),
+                            char: Some(char),
+                            pos: input.pos() - 1,
+                            row,
+                            col,
+                        })
+                    } else {
+                        Ok(value)
+                    }
+                }
+                None => Ok(ParseValue::List(Vec::new())),
+            })
+    }
+
+    pub fn parse<'a>(
+        &self,
+        start_rule: &str,
+        input: impl Into<Input<'a>>,
+    ) -> Result<ParseValue<T>, ParseError> {
+        self.parse_rule(start_rule, input.into(), vec![], false)
+            .map(|res| {
+                res.map(|x| x.0)
+                    .unwrap_or_else(|| ParseValue::List(Vec::new()))
+            })
+    }
+
+    fn parse_rule<'a>(
+        &self,
+        rule_name: &str,
+        input: Input<'a>,
+        buffer: Vec<ParseValue<T>>,
+        recursive: bool,
+    ) -> ParseResult<'a, T> {
+        self.0
+            .get(rule_name)
+            .ok_or_else(|| ParseError::RuleNotFound {
+                rule_name: rule_name.to_owned(),
+            })
+            .and_then(|rule| self.parse_rule_trees(rule_name, &rule[..], input, buffer, recursive))
+    }
+
+    fn parse_rule_trees<'a>(
+        &self,
+        current_rule: &str,
+        rule_trees: &[RuleTree<T>],
+        input: Input<'a>,
+        buffer: Vec<ParseValue<T>>,
+        recursive: bool,
+    ) -> ParseResult<'a, T> {
+        let mut errors = HashSet::new();
+        for tree in rule_trees {
+            match tree.parse(self, current_rule, input.clone(), &buffer, recursive) {
+                res @ Ok(Some(_)) => return res,
+                Err(err) => {
+                    errors.insert(err);
+                }
+                Ok(None) => {}
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(None)
+        } else if errors.len() == 1 {
+            Err(errors.drain().next().unwrap())
+        } else {
+            Err(ParseError::MultipleErrors {
+                current_rule: current_rule.to_owned(),
+                errors: errors.into_iter().collect(),
+            })
+        }
+    }
+
+    fn parse_recursively<'a>(
+        &self,
+        current_rule: &str,
+        rule_trees: &[RuleTree<T>],
+        input: Input<'a>,
+        buffer: &Vec<ParseValue<T>>,
+    ) -> Option<(ParseValue<T>, Input<'a>)> {
+        match self.parse_rule_trees(
+            current_rule,
+            rule_trees,
+            input.clone(),
+            buffer.clone(),
+            true,
+        ) {
+            Err(_) => {
+                if buffer.len() == 1 {
+                    Some((buffer[0].clone(), input))
+                } else {
+                    Some((ParseValue::List(buffer.clone()), input))
+                }
+            }
+            Ok(Some((v, input))) => {
+                self.parse_recursively(current_rule, rule_trees, input, &vec![v])
+            }
+            Ok(None) => None,
+        }
+    }
+
+    fn smush(trees: Vec<RuleTree<T>>) -> Vec<RuleTree<T>> {
+        let mut v =
+            trees
+                .into_iter()
+                .fold(vec![], |mut trees: Vec<RuleTree<T>>, tree| match tree {
+                    RuleTree::Part { part, nexts } => {
+                        for t in &mut trees {
+                            match t {
+                                RuleTree::Part { part: p, nexts: n } if p == &part => {
+                                    n.extend(nexts);
+
+                                    let nexts = std::mem::take(n);
+                                    *n = Self::smush(nexts);
+
+                                    return trees;
+                                }
+                                _ => {}
+                            }
+                        }
+
+                        trees.push(RuleTree::Part {
+                            part,
+                            nexts: Self::smush(nexts),
+                        });
+
+                        trees
+                    }
+                    RuleTree::End { transformer } => {
+                        for t in &trees {
+                            if let RuleTree::End { .. } = t {
+                                return trees;
+                            }
+                        }
+
+                        trees.push(RuleTree::End { transformer });
+
+                        trees
+                    }
+                });
+
+        v.sort_by(|a, b| match (b, a) {
+            (RuleTree::Part { .. }, RuleTree::End { .. }) => Ordering::Greater,
+            (RuleTree::End { .. }, RuleTree::Part { .. }) => Ordering::Less,
+            (RuleTree::Part { part: p0, .. }, RuleTree::Part { part: p1, .. }) => match (p0, p1) {
+                (RulePart::Recurse, _) => Ordering::Greater,
+                (_, RulePart::Recurse) => Ordering::Less,
+                (RulePart::Term(lit0), RulePart::Term(lit1)) => {
+                    lit0.chars().count().cmp(&lit1.chars().count())
+                }
+                (RulePart::Term(_), RulePart::NonTerm(_)) => Ordering::Greater,
+                _ => Ordering::Less,
+            },
+            _ => std::cmp::Ordering::Equal,
+        });
+
+        v
+    }
+}
+
+// Macros
+
+#[allow(dead_code)]
+#[macro_export]
+macro_rules! rule_part {
+    ($lit:literal) => {
+        psi_parser::RulePart::Term(String::from($lit))
+    };
+
+    ($rule:ident) => {
+        psi_parser::RulePart::NonTerm(stringify!($rule).to_owned())
+    };
+}
+
+#[allow(dead_code)]
+#[macro_export]
+macro_rules! rule {
+    ($name:ident: ($($tt:tt)*) $(=> $transformer:expr)?) => {{
+        #[allow(unused_variables)]
+        let transformer: Option<Box<dyn Fn(&Vec<ParseValue<()>>) -> ParseValue<()>>> = None;
+
+        $(
+            let transformer: Option<Box<dyn Fn(&Vec<ParseValue<()>>) -> ParseValue<()>>> = Some(Box::new($transformer));
+        )?
+
+        Rule {
+            name: stringify!($name).to_owned(),
+            parts: vec![$(psi_parser::rule_part!($tt)),*],
+            transformer
+        }
+    }};
+
+    (#[type = $type:ty] $name:ident: ($($tt:tt)*) $(=> $transformer:expr)?) => {{
+        #[allow(unused_variables)]
+        let transformer: Option<Box<dyn Fn(&Vec<ParseValue<$type>>) -> ParseValue<$type>>> = None;
+
+        $(
+            let transformer: Option<Box<dyn Fn(&Vec<ParseValue<$type>>) -> ParseValue<$type>>> = Some(Box::new($transformer));
+        )?
+
+        Rule {
+            name: stringify!($name).to_owned(),
+            parts: vec![$(psi_parser::rule_part!($tt)),*],
+            transformer
+        }
+    }};
+}
+
+#[allow(dead_code)]
+#[macro_export]
+macro_rules! rules {
+    (
+        $(
+            $rule_name:ident {
+                $(
+                    ($( $tt:tt )*)
+                    $(=> $transformer:expr;)?
+                )+
+            }
+        )+
+    ) => {{
+        let mut rules = Vec::new();
+
+        $($(
+            rules.push(rule!($rule_name: ($($tt)*) $(=> $transformer)?).into());
+        )*)*
+
+        Rules::<()>::new(rules)
+    }};
+
+    (
+        #[type = $type:ty]
+
+        $(
+            $rule_name:ident {
+                $(
+                    ($( $tt:tt )*)
+                    $(=> $transformer:expr;)?
+                )+
+            }
+        )+
+    ) => {{
+        let mut rules = Vec::new();
+
+        $($(
+            rules.push(rule!(#[type = $type] $rule_name: ($($tt)*) $(=> $transformer)?).into());
+        )*)*
+
+        Rules::<$type>::new(rules)
+    }};
+}
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        grammar::{Grammar, RuleDef, RuleEntry, RulePart, Rules},
-        input::CharsInput,
-        parse::{
-            parsed::{ParseObject, ParseTree},
-            Parser,
-        },
-    };
-    use std::vec;
+    use crate as psi_parser;
+    use psi_parser::prelude::*;
 
-    fn compile_expr_grammar() -> Grammar {
-        let rules = Rules::new([
-            (
-                "start".to_owned(),
-                vec![RuleEntry {
-                    definitions: vec![RuleDef {
-                        parts: vec![RulePart::Rule("expr".to_owned())],
-                        ..Default::default()
-                    }],
-                    precedence: 0,
-                    ..Default::default()
-                }],
-            ),
-            //parts: vec![RulePart::Literal("0".to_owned())],
-            //
-            (
-                "digit_nz".to_owned(),
-                vec![RuleEntry {
-                    definitions: vec![
-                        RuleDef {
-                            parts: vec![RulePart::Literal("1".to_owned())],
-                            ..Default::default()
-                        },
-                        RuleDef {
-                            parts: vec![RulePart::Literal("2".to_owned())],
-                            ..Default::default()
-                        },
-                        RuleDef {
-                            parts: vec![RulePart::Literal("3".to_owned())],
-                            ..Default::default()
-                        },
-                        RuleDef {
-                            parts: vec![RulePart::Literal("4".to_owned())],
-                            ..Default::default()
-                        },
-                        RuleDef {
-                            parts: vec![RulePart::Literal("5".to_owned())],
-                            ..Default::default()
-                        },
-                        RuleDef {
-                            parts: vec![RulePart::Literal("6".to_owned())],
-                            ..Default::default()
-                        },
-                        RuleDef {
-                            parts: vec![RulePart::Literal("7".to_owned())],
-                            ..Default::default()
-                        },
-                        RuleDef {
-                            parts: vec![RulePart::Literal("8".to_owned())],
-                            ..Default::default()
-                        },
-                        RuleDef {
-                            parts: vec![RulePart::Literal("9".to_owned())],
-                            ..Default::default()
-                        },
-                    ],
-                    precedence: 0,
-                    ..Default::default()
-                }],
-            ),
-            (
-                "zero".to_owned(),
-                vec![RuleEntry {
-                    definitions: vec![RuleDef {
-                        parts: vec![RulePart::Literal("0".to_owned())],
-                        ..Default::default()
-                    }],
-                    precedence: 0,
-                    ..Default::default()
-                }],
-            ),
-            (
-                "digit".to_owned(),
-                vec![RuleEntry {
-                    definitions: vec![
-                        RuleDef {
-                            parts: vec![RulePart::Rule("zero".to_owned())],
-                            ..Default::default()
-                        },
-                        RuleDef {
-                            parts: vec![RulePart::Rule("digit_nz".to_owned())],
-                            ..Default::default()
-                        },
-                    ],
-                    precedence: 0,
-                    ..Default::default()
-                }],
-            ),
-            (
-                "number".to_owned(),
-                vec![RuleEntry {
-                    definitions: vec![
-                        RuleDef {
-                            parts: vec![RulePart::Rule("digit".to_owned())],
-                            ..Default::default()
-                        },
-                        RuleDef {
-                            parts: vec![
-                                RulePart::Rule("digit".to_owned()),
-                                RulePart::Rule("number".to_owned()),
-                            ],
-                            ..Default::default()
-                        },
-                    ],
-                    precedence: 0,
-                    ..Default::default()
-                }],
-            ),
-            (
-                "expr".to_owned(),
-                vec![
-                    RuleEntry {
-                        precedence: 30,
-                        definitions: vec![
-                            RuleDef {
-                                parts: vec![
-                                    RulePart::Literal("-".to_owned()),
-                                    RulePart::Rule("expr".to_owned()),
-                                ],
-                                ..Default::default()
-                            },
-                            RuleDef {
-                                parts: vec![RulePart::Rule("expr".to_owned())],
-                                ..Default::default()
-                            },
-                        ],
-                        ..Default::default()
-                    },
-                    RuleEntry {
-                        definitions: vec![
-                            RuleDef {
-                                parts: vec![
-                                    RulePart::Rule("expr".to_owned()),
-                                    RulePart::Literal("+".to_owned()),
-                                    RulePart::Rule("expr".to_owned()),
-                                ],
-                                ..Default::default()
-                            },
-                            RuleDef {
-                                parts: vec![
-                                    RulePart::Rule("expr".to_owned()),
-                                    RulePart::Literal("-".to_owned()),
-                                    RulePart::Rule("expr".to_owned()),
-                                ],
-                                ..Default::default()
-                            },
-                            RuleDef {
-                                parts: vec![RulePart::Rule("expr".to_owned())],
-                                ..Default::default()
-                            },
-                        ],
-                        precedence: 20,
-                        ..Default::default()
-                    },
-                    RuleEntry {
-                        definitions: vec![
-                            RuleDef {
-                                parts: vec![
-                                    RulePart::Rule("expr".to_owned()),
-                                    RulePart::Literal("*".to_owned()),
-                                    RulePart::Rule("expr".to_owned()),
-                                ],
-                                ..Default::default()
-                            },
-                            RuleDef {
-                                parts: vec![
-                                    RulePart::Rule("expr".to_owned()),
-                                    RulePart::Literal("/".to_owned()),
-                                    RulePart::Rule("expr".to_owned()),
-                                ],
-                                ..Default::default()
-                            },
-                            RuleDef {
-                                parts: vec![RulePart::Rule("expr".to_owned())],
-                                ..Default::default()
-                            },
-                        ],
-                        precedence: 10,
-                        ..Default::default()
-                    },
-                    RuleEntry {
-                        definitions: vec![
-                            RuleDef {
-                                parts: vec![RulePart::Rule("number".to_owned())],
-                                ..Default::default()
-                            },
-                            RuleDef {
-                                parts: vec![
-                                    RulePart::Literal("(".to_owned()),
-                                    RulePart::Rule("expr".to_owned()),
-                                    RulePart::Literal(")".to_owned()),
-                                ],
-                                ..Default::default()
-                            },
-                        ],
-                        precedence: 0,
-                        ..Default::default()
-                    },
-                ],
-            ),
-        ]);
+    #[test]
+    fn hello_world() {
+        let rules = rules! {
+            start {
+                (hello_world)
+            }
+            hello_world {
+                ("hello" " " "world")
+            }
+        };
 
-        rules.into_grammar()
-    }
+        let input = "hello world";
 
-    fn macro_expr_grammar() -> Grammar {
-        psi! {
-            start: expr -> |o| Ok(o[0].clone());
+        let result = rules.parse("start", input);
 
-            digit_nz: "1", "2", "3", "4", "5", "6", "7", "8", "9";
-            zero: "0";
-            digit: zero,
-                   digit_nz;
-            digits: digit,
-                    (digit digits);
-            number: digits -> |o| Ok(Float(o[0].to_string().parse()?));
-
-            @prec = 30,
-            expr: ("-" expr) -> |o| Ok(Float(-o[1].as_float()?)),
-                  expr;
-            @prec = 20,
-            expr: (expr "+" expr) -> |o| Ok(Float(o[0].as_float()? + o[2].as_float()?)),
-                  (expr "-" expr) -> |o| Ok(Float(o[0].as_float()? - o[2].as_float()?)),
-                  expr;
-            @prec = 10,
-            expr: (expr "*" expr) -> |o| Ok(Float(o[0].as_float()? * o[2].as_float()?)),
-                  (expr "/" expr) -> |o| Ok(Float(o[0].as_float()? / o[2].as_float()?)),
-                  expr;
-            expr: number -> |o| Ok(o[0].clone()),
-                  ("(" expr ")") -> |o| Ok(o.into_list()?.remove(1));
-        }
+        assert_eq!(
+            Ok(ParseValue::List(vec![
+                ParseValue::Token("hello".to_owned()),
+                ParseValue::Token(" ".to_owned()),
+                ParseValue::Token("world".to_owned())
+            ])),
+            result
+        );
     }
 
     #[test]
-    fn test_expr_0() {
-        let compiled_grammar = compile_expr_grammar();
-        let macro_grammar = macro_expr_grammar();
-        println!(
-            "compiled:\n{:?}\nmacro:\n{:?}\n",
-            compiled_grammar, macro_grammar
+    fn aab() {
+        let rules = rules! {
+            start { (aab) }
+            aab { ("b")
+                 ("a" aab) => |v| {
+                    let rest = v[1].clone();
+
+                    if let ParseValue::List(mut list) = rest {
+                        list.insert(0, v[0].clone());
+
+                        list.into()
+                    } else {
+                        vec![v[0].clone(), rest].into()
+                    }
+                 };
+               }
+        };
+
+        let input0 = "b";
+        let input1 = "ab";
+        let input2 = "aab";
+        let input3 = "aaab";
+        let input4 = "c";
+
+        assert_eq!(
+            Ok(ParseValue::Token("b".to_owned())),
+            rules.parse("start", input0)
         );
-        //assert_eq!(compiled_grammar, macro_grammar);
 
-        let input = "12+33*85+233".chars();
-        let expected_result = 12.0 + 33.0 * 85.0 + 233.0;
+        assert_eq!(
+            Ok(ParseValue::List(vec![
+                ParseValue::Token("a".to_owned()),
+                ParseValue::Token("b".to_owned())
+            ])),
+            rules.parse("start", input1)
+        );
 
-        let mut parser = Parser::<CharsInput>::new(input);
+        assert_eq!(
+            Ok(ParseValue::List(vec![
+                ParseValue::Token("a".to_owned()),
+                ParseValue::Token("a".to_owned()),
+                ParseValue::Token("b".to_owned())
+            ])),
+            rules.parse("start", input2)
+        );
 
-        let result = parser.parse_rule_by_name(&macro_grammar, "start");
+        assert_eq!(
+            Ok(ParseValue::List(vec![
+                ParseValue::Token("a".to_owned()),
+                ParseValue::Token("a".to_owned()),
+                ParseValue::Token("a".to_owned()),
+                ParseValue::Token("b".to_owned())
+            ])),
+            rules.parse("start", input3)
+        );
 
-        if let Err(e) = result {
-            eprintln!("ParseError:\n{:#?}", e);
-            panic!("Error encountered while parsing.");
-        }
+        assert_eq!(
+            Err(ParseError::UnexpectedChar {
+                current_rule: "aab".to_owned(),
+                char: Some('c'),
+                pos: 0,
+                row: 1,
+                col: 1,
+            }),
+            rules.parse("start", input4)
+        );
+    }
 
-        let parsed = result.unwrap();
+    #[test]
+    fn calculator() {
+        let rules = rules! {
+            start {
+                (ws term ws) => |v| v[1].clone();
+            }
 
-        println!("Parsed:\n{:#?}", parsed);
+            ws {
+                ()
+                (ws " ")
+            }
 
-        let parsed = parsed
-            .transfrom()
-            .expect("Failed to transform the TreeBuffer.");
+            expr {
+                (term)
+            }
 
-        assert_eq!(ParseObject::Float(expected_result), parsed);
+            term {
+                (factor)
+                (term ws "+" ws term) => |v| {
+                    match (&v[0], &v[4]) {
+                        (ParseValue::Integer(a), ParseValue::Integer(b)) => (a + b).into(),
+                        _ => unreachable!()
+                    }
+                };
+            }
 
-        // great success! wawaweewa!
+            factor {
+                (int)
+                ("(" ws expr ws ")") => |v| v[2].clone();
+                (factor ws "*" ws factor) => |v| {
+                    match (&v[0], &v[4]) {
+                        (ParseValue::Integer(a), ParseValue::Integer(b)) => (a * b).into(),
+                        _ => unreachable!()
+                    }
+                };
+            }
+
+            digit_nonzero {
+                ("1")
+                ("2")
+                ("3")
+                ("4")
+                ("5")
+                ("6")
+                ("7")
+                ("8")
+                ("9")
+            }
+
+            int {
+                ("0") => |_| ParseValue::Integer(0);
+                (_int) => |v| match &v[0] {
+                    ParseValue::String(s) => ParseValue::Integer(s.parse().unwrap()),
+                    _ => unreachable!(),
+                };
+            }
+
+            _int {
+                (digit_nonzero) => |v| match &v[0] {
+                    ParseValue::Token(digit) => digit.clone().into(),
+                    _ => unreachable!()
+                };
+
+                (_int digit_nonzero) => |v| match (&v[0], &v[1]) {
+                    (ParseValue::String(int), ParseValue::Token(digit)) => format!("{int}{digit}").into(),
+                    _ => unreachable!()
+                };
+
+                (_int "0") => |v| match &v[0] {
+                    ParseValue::String(int) => format!("{int}0").into(),
+                    _ => unreachable!()
+                };
+            }
+        };
+
+        let input = "       12 * 5 + 16 * 2     ";
+
+        let expected_result = 12 * 5 + 16 * 2;
+
+        let result = rules.parse("start", input);
+
+        assert_eq!(Ok(ParseValue::Integer(expected_result)), result)
     }
 }
