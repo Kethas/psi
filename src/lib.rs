@@ -12,6 +12,8 @@ pub mod prelude {
     };
 }
 
+// Parsing Result Structs
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum ParseValue<T>
 where
@@ -84,9 +86,13 @@ pub enum ParseError {
     },
 }
 
+// Long Type Aliases
+
 pub type ParseResult<'a, T> = Result<Option<(ParseValue<T>, Input<'a>)>, ParseError>;
 
 pub type Transformer<T> = Box<dyn Fn(&Vec<ParseValue<T>>) -> ParseValue<T>>;
+
+// Input
 
 #[derive(Clone)]
 pub struct Input<'a> {
@@ -146,6 +152,8 @@ impl<'a> From<Chars<'a>> for Input<'a> {
         Self::new(value)
     }
 }
+
+// Grammar
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum RulePart {
@@ -219,7 +227,7 @@ impl<T: Clone + Debug + PartialEq> RuleTree<T> {
                     let mut buffer = buffer.clone();
                     buffer.push(parse_value);
 
-                    parse_rule_trees(rules, current_rule, nexts, input, buffer, recursive)
+                    rules.parse_rule_trees(current_rule, nexts, input, buffer, recursive)
                 }
                 RulePart::NonTerm(rule_name) => rules
                     .parse_rule(rule_name, input, vec![], false)
@@ -228,7 +236,7 @@ impl<T: Clone + Debug + PartialEq> RuleTree<T> {
                             let mut buffer = buffer.clone();
                             buffer.push(parse_value);
 
-                            parse_rule_trees(rules, current_rule, nexts, input, buffer, recursive)
+                            rules.parse_rule_trees(current_rule, nexts, input, buffer, recursive)
                         }
                         None => Ok(None),
                     }),
@@ -243,8 +251,7 @@ impl<T: Clone + Debug + PartialEq> RuleTree<T> {
                                     let mut buffer = buffer.clone();
                                     buffer.push(parse_value);
 
-                                    match parse_recursively(
-                                        rules,
+                                    match rules.parse_recursively(
                                         current_rule,
                                         nexts,
                                         input.clone(),
@@ -336,7 +343,7 @@ impl<T: Clone + Debug + PartialEq> Rules<T> {
 
         Rules(
             map.into_iter()
-                .map(|(rule_name, rule_trees)| (rule_name, smush(rule_trees)))
+                .map(|(rule_name, rule_trees)| (rule_name, Self::smush(rule_trees)))
                 .collect(),
         )
     }
@@ -391,124 +398,128 @@ impl<T: Clone + Debug + PartialEq> Rules<T> {
             .ok_or_else(|| ParseError::RuleNotFound {
                 rule_name: rule_name.to_owned(),
             })
-            .and_then(|rule| parse_rule_trees(self, rule_name, &rule[..], input, buffer, recursive))
-    }
-}
-
-fn parse_rule_trees<'a, T: Clone + Debug + PartialEq>(
-    rules: &Rules<T>,
-    current_rule: &str,
-    rule_trees: &[RuleTree<T>],
-    input: Input<'a>,
-    buffer: Vec<ParseValue<T>>,
-    recursive: bool,
-) -> ParseResult<'a, T> {
-    let mut errors = HashSet::new();
-    for tree in rule_trees {
-        match tree.parse(rules, current_rule, input.clone(), &buffer, recursive) {
-            res @ Ok(Some(_)) => return res,
-            Err(err) => {
-                errors.insert(err);
-            }
-            Ok(None) => {}
-        }
+            .and_then(|rule| self.parse_rule_trees(rule_name, &rule[..], input, buffer, recursive))
     }
 
-    if errors.is_empty() {
-        Ok(None)
-    } else if errors.len() == 1 {
-        Err(errors.drain().next().unwrap())
-    } else {
-        Err(ParseError::MultipleErrors {
-            current_rule: current_rule.to_owned(),
-            errors: errors.into_iter().collect(),
-        })
-    }
-}
-
-fn parse_recursively<'a, T: Clone + Debug + PartialEq>(
-    rules: &Rules<T>,
-    current_rule: &str,
-    rule_trees: &[RuleTree<T>],
-    input: Input<'a>,
-    buffer: &Vec<ParseValue<T>>,
-) -> Option<(ParseValue<T>, Input<'a>)> {
-    match parse_rule_trees(
-        rules,
-        current_rule,
-        rule_trees,
-        input.clone(),
-        buffer.clone(),
-        true,
-    ) {
-        Err(_) => {
-            if buffer.len() == 1 {
-                Some((buffer[0].clone(), input))
-            } else {
-                Some((ParseValue::List(buffer.clone()), input))
-            }
-        }
-        Ok(Some((v, input))) => parse_recursively(rules, current_rule, rule_trees, input, &vec![v]),
-        Ok(None) => None,
-    }
-}
-
-fn smush<T: Clone + Debug + PartialEq>(trees: Vec<RuleTree<T>>) -> Vec<RuleTree<T>> {
-    let mut v = trees
-        .into_iter()
-        .fold(vec![], |mut trees: Vec<RuleTree<T>>, tree| match tree {
-            RuleTree::Part { part, nexts } => {
-                for t in &mut trees {
-                    match t {
-                        RuleTree::Part { part: p, nexts: n } if p == &part => {
-                            n.extend(nexts);
-
-                            let nexts = std::mem::take(n);
-                            *n = smush(nexts);
-
-                            return trees;
-                        }
-                        _ => {}
-                    }
+    fn parse_rule_trees<'a>(
+        &self,
+        current_rule: &str,
+        rule_trees: &[RuleTree<T>],
+        input: Input<'a>,
+        buffer: Vec<ParseValue<T>>,
+        recursive: bool,
+    ) -> ParseResult<'a, T> {
+        let mut errors = HashSet::new();
+        for tree in rule_trees {
+            match tree.parse(self, current_rule, input.clone(), &buffer, recursive) {
+                res @ Ok(Some(_)) => return res,
+                Err(err) => {
+                    errors.insert(err);
                 }
+                Ok(None) => {}
+            }
+        }
 
-                trees.push(RuleTree::Part {
-                    part,
-                    nexts: smush(nexts),
+        if errors.is_empty() {
+            Ok(None)
+        } else if errors.len() == 1 {
+            Err(errors.drain().next().unwrap())
+        } else {
+            Err(ParseError::MultipleErrors {
+                current_rule: current_rule.to_owned(),
+                errors: errors.into_iter().collect(),
+            })
+        }
+    }
+
+    fn parse_recursively<'a>(
+        &self,
+        current_rule: &str,
+        rule_trees: &[RuleTree<T>],
+        input: Input<'a>,
+        buffer: &Vec<ParseValue<T>>,
+    ) -> Option<(ParseValue<T>, Input<'a>)> {
+        match self.parse_rule_trees(
+            current_rule,
+            rule_trees,
+            input.clone(),
+            buffer.clone(),
+            true,
+        ) {
+            Err(_) => {
+                if buffer.len() == 1 {
+                    Some((buffer[0].clone(), input))
+                } else {
+                    Some((ParseValue::List(buffer.clone()), input))
+                }
+            }
+            Ok(Some((v, input))) => {
+                self.parse_recursively(current_rule, rule_trees, input, &vec![v])
+            }
+            Ok(None) => None,
+        }
+    }
+
+    fn smush(trees: Vec<RuleTree<T>>) -> Vec<RuleTree<T>> {
+        let mut v =
+            trees
+                .into_iter()
+                .fold(vec![], |mut trees: Vec<RuleTree<T>>, tree| match tree {
+                    RuleTree::Part { part, nexts } => {
+                        for t in &mut trees {
+                            match t {
+                                RuleTree::Part { part: p, nexts: n } if p == &part => {
+                                    n.extend(nexts);
+
+                                    let nexts = std::mem::take(n);
+                                    *n = Self::smush(nexts);
+
+                                    return trees;
+                                }
+                                _ => {}
+                            }
+                        }
+
+                        trees.push(RuleTree::Part {
+                            part,
+                            nexts: Self::smush(nexts),
+                        });
+
+                        trees
+                    }
+                    RuleTree::End { transformer } => {
+                        for t in &trees {
+                            if let RuleTree::End { .. } = t {
+                                return trees;
+                            }
+                        }
+
+                        trees.push(RuleTree::End { transformer });
+
+                        trees
+                    }
                 });
 
-                trees
-            }
-            RuleTree::End { transformer } => {
-                for t in &trees {
-                    if let RuleTree::End { .. } = t {
-                        return trees;
-                    }
+        v.sort_by(|a, b| match (b, a) {
+            (RuleTree::Part { .. }, RuleTree::End { .. }) => Ordering::Greater,
+            (RuleTree::End { .. }, RuleTree::Part { .. }) => Ordering::Less,
+            (RuleTree::Part { part: p0, .. }, RuleTree::Part { part: p1, .. }) => match (p0, p1) {
+                (RulePart::Recurse, _) => Ordering::Greater,
+                (_, RulePart::Recurse) => Ordering::Less,
+                (RulePart::Term(lit0), RulePart::Term(lit1)) => {
+                    lit0.chars().count().cmp(&lit1.chars().count())
                 }
-
-                trees.push(RuleTree::End { transformer });
-
-                trees
-            }
+                (RulePart::Term(_), RulePart::NonTerm(_)) => Ordering::Greater,
+                _ => Ordering::Less,
+            },
+            _ => std::cmp::Ordering::Equal,
         });
 
-    v.sort_by(|a, b| match (b, a) {
-        (RuleTree::Part { .. }, RuleTree::End { .. }) => Ordering::Greater,
-        (RuleTree::End { .. }, RuleTree::Part { .. }) => Ordering::Less,
-        (RuleTree::Part { part: p0, .. }, RuleTree::Part { part: p1, .. }) => match (p0, p1) {
-            (RulePart::Recurse, _) => Ordering::Greater,
-            (_, RulePart::Recurse) => Ordering::Less,
-            (RulePart::Term(lit0), RulePart::Term(lit1)) => {
-                lit0.chars().count().cmp(&lit1.chars().count())
-            }
-            (RulePart::Term(_), RulePart::NonTerm(_)) => Ordering::Greater,
-            _ => Ordering::Less,
-        },
-        _ => std::cmp::Ordering::Equal,
-    });
-
-    v
+        v
+    }
 }
+
+// Macros
 
 #[allow(dead_code)]
 #[macro_export]
