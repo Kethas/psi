@@ -92,6 +92,8 @@ let rules = rules!{
 
 Using the above code to parse "[John,John,Josh,Jimmy,Jane,Jeremiah]" will yield a `ParseValue::List` containing a `Vec` of `ParseValue::Token` of the names.
 
+The default functionality when a transformer isn't specified is to return the `Vec<ParseValue>` inside a `ParseValue::List`, or return the single value inside the `Vec` if it only has one value.
+
 This isn't the best method, but it does work until there's a better alternative.
 
 ## Known issues
