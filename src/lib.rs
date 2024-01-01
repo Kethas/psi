@@ -23,6 +23,8 @@ pub enum ParseError {
         current_rule: String,
         char: Option<char>,
         pos: usize,
+        row: usize,
+        col: usize,
     },
     MultipleErrors {
         current_rule: String,
@@ -39,6 +41,8 @@ pub struct Input<'a> {
     source: &'a str,
     chars: Chars<'a>,
     pos: usize,
+    col: usize,
+    row: usize,
 }
 
 impl<'a> Input<'a> {
@@ -47,6 +51,8 @@ impl<'a> Input<'a> {
             source,
             chars: source.chars(),
             pos: 0,
+            col: 1,
+            row: 1,
         }
     }
 
@@ -54,12 +60,22 @@ impl<'a> Input<'a> {
     pub fn next(&mut self) -> Option<char> {
         self.chars.next().map(|c| {
             self.pos += 1;
+
+            if c == '\n' {
+                self.row += 1;
+                self.col = 1;
+            }
+
             c
         })
     }
 
     pub fn pos(&self) -> usize {
         self.pos
+    }
+
+    pub fn row_col(&self) -> (usize, usize) {
+        (self.row, self.col)
     }
 
     pub fn source(&self) -> &'a str {
@@ -110,6 +126,8 @@ impl RuleTree {
                     loop {
                         let mut i = input.clone();
 
+                        let (row, col) = i.row_col();
+
                         let (i_char, l_char) = (i.next(), literal_chars.next());
                         match (i_char, l_char) {
                             (None, None) => break,
@@ -118,6 +136,8 @@ impl RuleTree {
                                     current_rule: current_rule.to_owned(),
                                     char: None,
                                     pos: i.pos(),
+                                    row,
+                                    col,
                                 })
                             }
                             (Some(_), None) => break,
@@ -127,6 +147,8 @@ impl RuleTree {
                                     current_rule: current_rule.to_owned(),
                                     char,
                                     pos: i.pos() - 1,
+                                    row,
+                                    col,
                                 })
                             }
                         }
@@ -269,11 +291,15 @@ impl Rules {
         self.parse_rule(start_rule, input.into(), vec![], false)
             .and_then(|res| match res {
                 Some((value, mut input)) => {
+                    let (row, col) = input.row_col();
+
                     if let Some(char) = input.next() {
                         Err(ParseError::UnexpectedChar {
                             current_rule: "<parse_entire>".to_owned(),
                             char: Some(char),
                             pos: input.pos() - 1,
+                            row,
+                            col,
                         })
                     } else {
                         Ok(value)
@@ -570,7 +596,9 @@ mod tests {
             Err(ParseError::UnexpectedChar {
                 current_rule: "aab".to_owned(),
                 char: Some('c'),
-                pos: 0
+                pos: 0,
+                row: 1,
+                col: 1,
             }),
             rules.parse("start", input4)
         );
