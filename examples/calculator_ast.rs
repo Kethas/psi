@@ -1,6 +1,6 @@
 use std::io::{stdin, stdout, Write};
 
-use psi_parser::*;
+use psi_parser::prelude::*;
 
 #[derive(Debug, Clone, PartialEq)]
 enum ExprAst {
@@ -33,13 +33,13 @@ fn main() {
             (factor)
             (term ws "+" ws term) => |v| {
                 match (&v[0], &v[4]) {
-                    (ParseValue::Value(a), ParseValue::Value(b)) => ParseValue::Value(ExprAst::Add(Box::new(a.clone()), Box::new(b.clone()))),
+                    (ParseValue::Value(a), ParseValue::Value(b)) => ExprAst::Add(Box::new(a.clone()), Box::new(b.clone())).into_value(),
                     _ => unreachable!()
                 }
             };
             (term ws "-" ws term) => |v| {
                 match (&v[0], &v[4]) {
-                    (ParseValue::Value(a), ParseValue::Value(b)) => ParseValue::Value(ExprAst::Sub(Box::new(a.clone()), Box::new(b.clone()))),
+                    (ParseValue::Value(a), ParseValue::Value(b)) => ExprAst::Sub(Box::new(a.clone()), Box::new(b.clone())).into_value(),
                     _ => unreachable!()
                 }
             };
@@ -50,13 +50,13 @@ fn main() {
             ("(" ws expr ws ")") => |v| v[2].clone();
             (factor ws "*" ws factor) => |v| {
                 match (&v[0], &v[4]) {
-                    (ParseValue::Value(a), ParseValue::Value(b)) => ParseValue::Value(ExprAst::Mul(Box::new(a.clone()), Box::new(b.clone()))),
+                    (ParseValue::Value(a), ParseValue::Value(b)) => ExprAst::Mul(Box::new(a.clone()), Box::new(b.clone())).into_value(),
                     _ => unreachable!()
                 }
             };
             (factor ws "/" ws factor) => |v| {
                 match (&v[0], &v[4]) {
-                    (ParseValue::Value(a), ParseValue::Value(b)) => ParseValue::Value(ExprAst::Div(Box::new(a.clone()), Box::new(b.clone()))),
+                    (ParseValue::Value(a), ParseValue::Value(b)) => ExprAst::Div(Box::new(a.clone()), Box::new(b.clone())).into_value(),
                     _ => unreachable!()
                 }
             };
@@ -89,44 +89,44 @@ fn main() {
 
         digits {
             (digit) => |v| match &v[0] {
-                ParseValue::Token(s) => ParseValue::String(s.clone()),
+                ParseValue::Token(s) => s.clone().into(),
                 _ => unreachable!()
             };
             (digits digit) => |v| match (&v[0], &v[1]) {
-                (ParseValue::String(s0), ParseValue::Token(s1)) => ParseValue::String(format!("{s0}{s1}")),
+                (ParseValue::String(s0), ParseValue::Token(s1)) => format!("{s0}{s1}").into(),
                 _ => unreachable!()
             };
         }
 
         float {
             (int) => |v| match &v[0] {
-                ParseValue::String(s) => ParseValue::Value(ExprAst::Int(s.parse().unwrap())),
+                ParseValue::String(s) => ExprAst::Int(s.parse().unwrap()).into_value(),
                 _ => unreachable!()
             };
             (int "." digits) => |v| match (&v[0], &v[2]) {
-                (ParseValue::String(s0), ParseValue::String(s1)) => ParseValue::Value(ExprAst::Float(format!("{s0}.{s1}").parse().unwrap())),
+                (ParseValue::String(s0), ParseValue::String(s1)) => ExprAst::Float(format!("{s0}.{s1}").parse().unwrap()).into_value(),
                 _ => unreachable!()
             };
         }
 
         int {
-            ("0") => |_| ParseValue::String("0".to_owned());
+            ("0") => |_| "0".to_owned().into();
             (_int)
         }
 
         _int {
             (digit_nonzero) => |v| match &v[0] {
-                ParseValue::Token(digit) => ParseValue::String(digit.clone()),
+                ParseValue::Token(digit) => digit.clone().into(),
                 _ => unreachable!()
             };
 
             (_int digit_nonzero) => |v| match (&v[0], &v[1]) {
-                (ParseValue::String(int), ParseValue::Token(digit)) => ParseValue::String(format!("{int}{digit}")),
+                (ParseValue::String(int), ParseValue::Token(digit)) => format!("{int}{digit}").into(),
                 _ => unreachable!()
             };
 
             (_int "0") => |v| match &v[0] {
-                ParseValue::String(int) => ParseValue::String(format!("{int}0")),
+                ParseValue::String(int) => format!("{int}0").into(),
                 _ => unreachable!()
             };
         }

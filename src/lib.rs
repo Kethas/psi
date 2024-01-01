@@ -5,6 +5,13 @@ use std::{
     str::Chars,
 };
 
+pub mod prelude {
+    pub use super::{
+        rule, rules, IntoParseValue as _, ParseError, ParseResult, ParseValue, Rule, Rules,
+        Transformer,
+    };
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum ParseValue<T>
 where
@@ -17,6 +24,46 @@ where
     String(String),
     Map(HashMap<String, ParseValue<T>>),
     Value(T),
+}
+
+impl<T: Clone + Debug + PartialEq> From<Vec<ParseValue<T>>> for ParseValue<T> {
+    fn from(value: Vec<ParseValue<T>>) -> Self {
+        ParseValue::List(value)
+    }
+}
+
+impl<T: Clone + Debug + PartialEq> From<i32> for ParseValue<T> {
+    fn from(value: i32) -> Self {
+        ParseValue::Integer(value)
+    }
+}
+
+impl<T: Clone + Debug + PartialEq> From<f32> for ParseValue<T> {
+    fn from(value: f32) -> Self {
+        ParseValue::Float(value)
+    }
+}
+
+impl<T: Clone + Debug + PartialEq> From<String> for ParseValue<T> {
+    fn from(value: String) -> Self {
+        ParseValue::String(value)
+    }
+}
+
+impl<T: Clone + Debug + PartialEq> From<HashMap<String, ParseValue<T>>> for ParseValue<T> {
+    fn from(value: HashMap<String, ParseValue<T>>) -> Self {
+        ParseValue::Map(value)
+    }
+}
+
+pub trait IntoParseValue: Clone + Debug + PartialEq {
+    fn into_value(self) -> ParseValue<Self>;
+}
+
+impl<T: Clone + Debug + PartialEq> IntoParseValue for T {
+    fn into_value(self) -> ParseValue<Self> {
+        ParseValue::Value(self)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -37,11 +84,9 @@ pub enum ParseError {
     },
 }
 
-pub type ParseResult<'a, T> =
-    Result<Option<(ParseValue<T>, Input<'a>)>, ParseError>;
+pub type ParseResult<'a, T> = Result<Option<(ParseValue<T>, Input<'a>)>, ParseError>;
 
-pub type Transformer<T> =
-    Box<dyn Fn(&Vec<ParseValue<T>>) -> ParseValue<T>>;
+pub type Transformer<T> = Box<dyn Fn(&Vec<ParseValue<T>>) -> ParseValue<T>>;
 
 #[derive(Clone)]
 pub struct Input<'a> {
@@ -469,11 +514,11 @@ fn smush<T: Clone + Debug + PartialEq>(trees: Vec<RuleTree<T>>) -> Vec<RuleTree<
 #[macro_export]
 macro_rules! rule_part {
     ($lit:literal) => {
-        RulePart::Term(String::from($lit))
+        psi_parser::RulePart::Term(String::from($lit))
     };
 
     ($rule:ident) => {
-        RulePart::NonTerm(stringify!($rule).to_owned())
+        psi_parser::RulePart::NonTerm(stringify!($rule).to_owned())
     };
 }
 
@@ -490,7 +535,7 @@ macro_rules! rule {
 
         Rule {
             name: stringify!($name).to_owned(),
-            parts: vec![$(rule_part!($tt)),*],
+            parts: vec![$(psi_parser::rule_part!($tt)),*],
             transformer
         }
     }};
@@ -505,7 +550,7 @@ macro_rules! rule {
 
         Rule {
             name: stringify!($name).to_owned(),
-            parts: vec![$(rule_part!($tt)),*],
+            parts: vec![$(psi_parser::rule_part!($tt)),*],
             transformer
         }
     }};
@@ -557,7 +602,8 @@ macro_rules! rules {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate as psi_parser;
+    use psi_parser::prelude::*;
 
     #[test]
     fn hello_world() {
@@ -595,9 +641,9 @@ mod tests {
                     if let ParseValue::List(mut list) = rest {
                         list.insert(0, v[0].clone());
 
-                        ParseValue::List(list)
+                        list.into()
                     } else {
-                        ParseValue::List(vec![v[0].clone(), rest])
+                        vec![v[0].clone(), rest].into()
                     }
                  };
                }
@@ -673,7 +719,7 @@ mod tests {
                 (factor)
                 (term ws "+" ws term) => |v| {
                     match (&v[0], &v[4]) {
-                        (ParseValue::Integer(a), ParseValue::Integer(b)) => ParseValue::Integer(a + b),
+                        (ParseValue::Integer(a), ParseValue::Integer(b)) => (a + b).into(),
                         _ => unreachable!()
                     }
                 };
@@ -684,7 +730,7 @@ mod tests {
                 ("(" ws expr ws ")") => |v| v[2].clone();
                 (factor ws "*" ws factor) => |v| {
                     match (&v[0], &v[4]) {
-                        (ParseValue::Integer(a), ParseValue::Integer(b)) => ParseValue::Integer(a * b),
+                        (ParseValue::Integer(a), ParseValue::Integer(b)) => (a * b).into(),
                         _ => unreachable!()
                     }
                 };
@@ -712,17 +758,17 @@ mod tests {
 
             _int {
                 (digit_nonzero) => |v| match &v[0] {
-                    ParseValue::Token(digit) => ParseValue::String(digit.clone()),
+                    ParseValue::Token(digit) => digit.clone().into(),
                     _ => unreachable!()
                 };
 
                 (_int digit_nonzero) => |v| match (&v[0], &v[1]) {
-                    (ParseValue::String(int), ParseValue::Token(digit)) => ParseValue::String(format!("{int}{digit}")),
+                    (ParseValue::String(int), ParseValue::Token(digit)) => format!("{int}{digit}").into(),
                     _ => unreachable!()
                 };
 
                 (_int "0") => |v| match &v[0] {
-                    ParseValue::String(int) => ParseValue::String(format!("{int}0")),
+                    ParseValue::String(int) => format!("{int}0").into(),
                     _ => unreachable!()
                 };
             }

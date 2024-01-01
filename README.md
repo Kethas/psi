@@ -20,7 +20,7 @@ These constructs can be used to represent (hopefully) almost anything that can b
 The easiest way to make a Psi grammar is using the `rules!` macro.
 
 ```rust
-use psi_parser::rules;
+use psi_parser::prelude::*;
 
 let rules = rules! {
     start {
@@ -52,7 +52,7 @@ Currently, the best way to use these actions is to match on indices and clone wh
 Make sure to remember the semicolon (`;`) at the end of the transformer expression!
 
 ```rust
-use psi_parser::{rules, ParseValue};
+use psi_parser::prelude::*;
 
 let rules = rules!{
     start {
@@ -97,7 +97,7 @@ The default functionality when a transformer isn't specified is to return the `V
 You can additionally use a custom type for `ParseValue::Value` using `#[type = Type]`
 
 ```rust
-use psi_parser::{rules, ParseValue};
+use psi_parser::prelude::*;
 
 // Your type must implement these three traits
 #[derive(Debug, Clone, PartialEq)]
@@ -122,10 +122,12 @@ let rules = rules! {
         ("Jane") => |_| ParseValue::Value(Name::Jane);
         ("Jeremiah") => |_| ParseValue::Value(Name::Jeremiah);
         ("Josh") => |_| ParseValue::Value(Name::Josh);
-        ("Jimmy") => |_| ParseValue::Value(Name::Jimmy);
+        ("Jimmy") => |_| Name::Jimmy.into_value(); // You can also use .into_value()
     }
 }
 ```
+
+Note that you can use the `Into` trait for the `List`, `Integer`, `Float`, `String`, and `Map` variants of `ParseValue` with their respective types. For the `Value` variant use `.into_value()` which is included in the prelude.
 
 This isn't the best method, but it does work until there's a better alternative.
 

@@ -10,9 +10,6 @@ readme = "README.md"
 keywords = ["parser", "parsing"]
 categories = ["parsing"]
 
-include = [
-    "**/*.rs",
-    "Cargo.toml",
-]
+include = ["**/*.rs", "Cargo.toml"]
 
 [dependencies]

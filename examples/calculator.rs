@@ -1,6 +1,6 @@
 use std::io::{stdin, stdout, Write};
 
-use psi_parser::*;
+use psi_parser::prelude::*;
 
 fn main() {
     let rules = rules! {
@@ -21,13 +21,13 @@ fn main() {
             (factor)
             (term ws "+" ws term) => |v| {
                 match (&v[0], &v[4]) {
-                    (ParseValue::Float(a), ParseValue::Float(b)) => ParseValue::Float(a + b),
+                    (ParseValue::Float(a), ParseValue::Float(b)) => (a + b).into(),
                     _ => unreachable!()
                 }
             };
             (term ws "-" ws term) => |v| {
                 match (&v[0], &v[4]) {
-                    (ParseValue::Float(a), ParseValue::Float(b)) => ParseValue::Float(a - b),
+                    (ParseValue::Float(a), ParseValue::Float(b)) => (a - b).into(),
                     _ => unreachable!()
                 }
             };
@@ -38,13 +38,13 @@ fn main() {
             ("(" ws expr ws ")") => |v| v[2].clone();
             (factor ws "*" ws factor) => |v| {
                 match (&v[0], &v[4]) {
-                    (ParseValue::Float(a), ParseValue::Float(b)) => ParseValue::Float(a * b),
+                    (ParseValue::Float(a), ParseValue::Float(b)) => (a * b).into(),
                     _ => unreachable!()
                 }
             };
             (factor ws "/" ws factor) => |v| {
                 match (&v[0], &v[4]) {
-                    (ParseValue::Float(a), ParseValue::Float(b)) => ParseValue::Float(a / b),
+                    (ParseValue::Float(a), ParseValue::Float(b)) => (a / b).into(),
                     _ => unreachable!()
                 }
             };
@@ -77,11 +77,11 @@ fn main() {
 
         digits {
             (digit) => |v| match &v[0] {
-                ParseValue::Token(s) => ParseValue::String(s.clone()),
+                ParseValue::Token(s) => s.clone().into(),
                 _ => unreachable!()
             };
             (digits digit) => |v| match (&v[0], &v[1]) {
-                (ParseValue::String(s0), ParseValue::Token(s1)) => ParseValue::String(format!("{s0}{s1}")),
+                (ParseValue::String(s0), ParseValue::Token(s1)) => format!("{s0}{s1}").into(),
                 _ => unreachable!()
             };
         }
@@ -98,23 +98,23 @@ fn main() {
         }
 
         int {
-            ("0") => |_| ParseValue::String("0".to_owned());
+            ("0") => |_| "0".to_owned().into();
             (_int)
         }
 
         _int {
             (digit_nonzero) => |v| match &v[0] {
-                ParseValue::Token(digit) => ParseValue::String(digit.clone()),
+                ParseValue::Token(digit) => digit.clone().into(),
                 _ => unreachable!()
             };
 
             (_int digit_nonzero) => |v| match (&v[0], &v[1]) {
-                (ParseValue::String(int), ParseValue::Token(digit)) => ParseValue::String(format!("{int}{digit}")),
+                (ParseValue::String(int), ParseValue::Token(digit)) => format!("{int}{digit}").into(),
                 _ => unreachable!()
             };
 
             (_int "0") => |v| match &v[0] {
-                ParseValue::String(int) => ParseValue::String(format!("{int}0")),
+                ParseValue::String(int) => format!("{int}0").into(),
                 _ => unreachable!()
             };
         }
