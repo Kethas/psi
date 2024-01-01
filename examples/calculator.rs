@@ -1,6 +1,6 @@
 use std::io::{stdin, stdout, Write};
 
-use psi::*;
+use psi_parser::*;
 
 fn main() {
     let rules = rules! {

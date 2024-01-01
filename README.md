@@ -20,7 +20,7 @@ These constructs can be used to represent (hopefully) almost anything that can b
 The easiest way to make a Psi grammar is using the `rules!` macro.
 
 ```rust
-use psi::rules;
+use psi_parser::rules;
 
 let rules = rules! {
     start {
@@ -52,7 +52,7 @@ Currently, the best way to use these actions is to match on indices and clone wh
 Make sure to remember the semicolon (`;`) at the end of the transformer expression!
 
 ```rust
-use psi::{rules, ParseValue};
+use psi_parser::{rules, ParseValue};
 
 let rules = rules!{
     start {
