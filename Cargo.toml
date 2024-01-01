@@ -1,6 +1,15 @@
 [package]
 name = "psi"
+description = "A parser aiming to trade performance for ease of use."
+authors = ["Kethas <kethas@asphyx.dev>"]
 version = "0.2.0"
 edition = "2021"
+license-file = "LICENSE"
+repository = "https://github.com/Kethas/psi"
+readme = "README.md"
+
+include = [
+    "src"
+]
 
 [dependencies]
