@@ -70,7 +70,6 @@ let rules = rules!{
 
         // v[0] and v[2] are always lists, so we match against them and use unreachable! for the rest
         (list_inner "," name) => |v| match (&v[0], &v[2]) {
-            
             (ParseValue::List(v0), ParseValue::List(v2)) => {
                 let mut vec = v0.clone();
                 vec.extend(v2.clone());
