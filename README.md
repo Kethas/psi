@@ -143,7 +143,7 @@ let rules = rules! {
 See the `examples` directory for the examples.
 They can be run using `cargo run --example <example_name>`.
 
-Shorter examples can be found at the `tests` module at the end of `src/lib.rs`.
+Shorter examples can be found in `src/tests/basic.rs`.
 
 ## License
 
