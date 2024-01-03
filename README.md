@@ -130,7 +130,7 @@ let rules = rules! {
         ("Josh") => |_| Name::Josh.into_value();
         ("Jimmy") => |_| Name::Jimmy.into_value();
     }
-}
+};
 ```
 
 ## Known issues

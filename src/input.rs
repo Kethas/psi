@@ -1,6 +1,5 @@
 use std::str::Chars;
 
-
 #[derive(Clone)]
 pub struct Input<'a> {
     chars: Chars<'a>,
@@ -27,6 +26,8 @@ impl<'a> Input<'a> {
             if c == '\n' {
                 self.row += 1;
                 self.col = 1;
+            } else {
+                self.col += 1;
             }
 
             c
