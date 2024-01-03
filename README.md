@@ -45,7 +45,7 @@ let result = rules.parse_entire("start", "Hello, Jimmy!");
 ```
 
 Running the above code will yield a list of tokens (`["Hello, ", "Jimmy", "!"]`).
-It is returned as a `ParseValue`, which is an `Arc<dyn Any>`.
+It is returned as a `ParseValue`, which is an `Rc<dyn Any>`.
 In order to extract the values you want, you can use `.downcast_ref::<Vec<ParseValue>()` (or any type you wish to match on). In this case, each item in the `Vec<ParseValue>` can be downcast into a `psi_parser::Token`, which represents a matched terminal.
 
 In order to make the parse output more useful, transformer actions can be attributed to each rule definition using `=>`.
