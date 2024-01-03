@@ -520,21 +520,6 @@ macro_rules! rule {
             transformer
         }
     }};
-
-    // (#[type = $type:ty] $name:ident: ($($tt:tt)*) $(=> $transformer:expr)?) => {{
-    //     #[allow(unused_variables)]
-    //     let transformer: Option<Box<dyn Fn(&Vec<ParseValue<$type>>) -> ParseValue<$type>>> = None;
-
-    //     $(
-    //         let transformer: Option<Box<dyn Fn(&Vec<ParseValue<$type>>) -> ParseValue<$type>>> = Some(Box::new($transformer));
-    //     )?
-
-    //     Rule {
-    //         name: stringify!($name).to_owned(),
-    //         parts: vec![$(psi_parser::rule_part!($tt)),*],
-    //         transformer
-    //     }
-    // }};
 }
 
 #[allow(dead_code)]
@@ -558,27 +543,6 @@ macro_rules! rules {
 
         Rules::new(rules)
     }};
-
-    // (
-    //     #[type = $type:ty]
-
-    //     $(
-    //         $rule_name:ident {
-    //             $(
-    //                 ($( $tt:tt )*)
-    //                 $(=> $transformer:expr;)?
-    //             )+
-    //         }
-    //     )+
-    // ) => {{
-    //     let mut rules = Vec::new();
-
-    //     $($(
-    //         rules.push(rule!(#[type = $type] $rule_name: ($($tt)*) $(=> $transformer)?).into());
-    //     )*)*
-
-    //     Rules::<$type>::new(rules)
-    // }};
 }
 
 #[cfg(test)]
