@@ -2,7 +2,7 @@ use std::io::{stdin, stdout, Write};
 
 use psi_parser::prelude::*;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 enum ExprAst {
     Int(i32),
     Float(f32),
@@ -14,8 +14,6 @@ enum ExprAst {
 
 fn main() {
     let rules = rules! {
-        #[type = ExprAst]
-
         start {
             (ws term ws) => |v| v[1].clone();
         }
@@ -32,14 +30,14 @@ fn main() {
         term {
             (factor)
             (term ws "+" ws term) => |v| {
-                match (&v[0], &v[4]) {
-                    (ParseValue::Value(a), ParseValue::Value(b)) => ExprAst::Add(Box::new(a.clone()), Box::new(b.clone())).into_value(),
+                match (v[0].downcast_ref::<ExprAst>(), v[4].downcast_ref::<ExprAst>()) {
+                    (Some(a), Some(b)) => ExprAst::Add(Box::new(a.clone()),Box::new(b.clone())).into_value(),
                     _ => unreachable!()
                 }
             };
             (term ws "-" ws term) => |v| {
-                match (&v[0], &v[4]) {
-                    (ParseValue::Value(a), ParseValue::Value(b)) => ExprAst::Sub(Box::new(a.clone()), Box::new(b.clone())).into_value(),
+                match (v[0].downcast_ref::<ExprAst>(), v[4].downcast_ref::<ExprAst>()) {
+                    (Some(a), Some(b)) => ExprAst::Sub(Box::new(a.clone()),Box::new(b.clone())).into_value(),
                     _ => unreachable!()
                 }
             };
@@ -49,18 +47,19 @@ fn main() {
             (float)
             ("(" ws expr ws ")") => |v| v[2].clone();
             (factor ws "*" ws factor) => |v| {
-                match (&v[0], &v[4]) {
-                    (ParseValue::Value(a), ParseValue::Value(b)) => ExprAst::Mul(Box::new(a.clone()), Box::new(b.clone())).into_value(),
+                match (v[0].downcast_ref::<ExprAst>(), v[4].downcast_ref::<ExprAst>()) {
+                    (Some(a), Some(b)) => ExprAst::Mul(Box::new(a.clone()),Box::new(b.clone())).into_value(),
                     _ => unreachable!()
                 }
             };
             (factor ws "/" ws factor) => |v| {
-                match (&v[0], &v[4]) {
-                    (ParseValue::Value(a), ParseValue::Value(b)) => ExprAst::Div(Box::new(a.clone()), Box::new(b.clone())).into_value(),
+                match (v[0].downcast_ref::<ExprAst>(), v[4].downcast_ref::<ExprAst>()) {
+                    (Some(a), Some(b)) => ExprAst::Div(Box::new(a.clone()),Box::new(b.clone())).into_value(),
                     _ => unreachable!()
                 }
             };
         }
+
 
         digit_nonzero {
             ("1")
@@ -88,45 +87,45 @@ fn main() {
         }
 
         digits {
-            (digit) => |v| match &v[0] {
-                ParseValue::Token(s) => s.clone().into(),
+            (digit) => |v| match v[0].downcast_ref::<Token>() {
+                Some(s) => s.to_string().into_value(),
                 _ => unreachable!()
             };
-            (digits digit) => |v| match (&v[0], &v[1]) {
-                (ParseValue::String(s0), ParseValue::Token(s1)) => format!("{s0}{s1}").into(),
+            (digits digit) => |v| match (v[0].downcast_ref::<String>(), v[1].downcast_ref::<Token>()) {
+                (Some(s0), Some(s1)) => format!("{s0}{s1}").into_value(),
                 _ => unreachable!()
             };
         }
 
         float {
-            (int) => |v| match &v[0] {
-                ParseValue::String(s) => ExprAst::Int(s.parse().unwrap()).into_value(),
+            (int) => |v| match v[0].downcast_ref::<String>() {
+                Some(s) => ExprAst::Int(s.parse().unwrap()).into_value(),
                 _ => unreachable!()
             };
-            (int "." digits) => |v| match (&v[0], &v[2]) {
-                (ParseValue::String(s0), ParseValue::String(s1)) => ExprAst::Float(format!("{s0}.{s1}").parse().unwrap()).into_value(),
+            (int "." digits) => |v| match (v[0].downcast_ref::<String>(), v[2].downcast_ref::<String>()) {
+                (Some(s0), Some(s1)) => ExprAst::Float(format!("{s0}.{s1}").parse().unwrap()).into_value(),
                 _ => unreachable!()
             };
         }
 
         int {
-            ("0") => |_| "0".to_owned().into();
+            ("0") => |_| "0".to_owned().into_value();
             (_int)
         }
 
         _int {
-            (digit_nonzero) => |v| match &v[0] {
-                ParseValue::Token(digit) => digit.clone().into(),
+            (digit_nonzero) => |v| match v[0].downcast_ref::<Token>() {
+                Some(digit) => digit.to_string().into_value(),
                 _ => unreachable!()
             };
 
-            (_int digit_nonzero) => |v| match (&v[0], &v[1]) {
-                (ParseValue::String(int), ParseValue::Token(digit)) => format!("{int}{digit}").into(),
+            (_int digit_nonzero) => |v| match (v[0].downcast_ref::<String>(), v[1].downcast_ref::<Token>()) {
+                (Some(int), Some(digit)) => format!("{int}{digit}").into_value(),
                 _ => unreachable!()
             };
 
-            (_int "0") => |v| match &v[0] {
-                ParseValue::String(int) => format!("{int}0").into(),
+            (_int "0") => |v| match v[0].downcast_ref::<String>() {
+                Some(int) => format!("{int}0").into_value(),
                 _ => unreachable!()
             };
         }
@@ -154,9 +153,14 @@ fn main() {
         let parse_result = rules.parse_entire("start", line);
 
         match parse_result {
-            Ok(ParseValue::Value(value)) => println!("AST: {value:#?}"),
+            Ok(value) => {
+                if let Some(ast) = value.downcast_ref::<ExprAst>() {
+                    println!("AST: {ast:#?}");
+                } else {
+                    println!("{value:?}");
+                }
+            }
             Err(error) => println!("Error: {error:#?}"),
-            Ok(value) => println!("{value:#?}"),
         }
     }
 }

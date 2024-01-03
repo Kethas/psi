@@ -2,7 +2,7 @@
 name = "psi-parser"
 description = "A parser aiming to trade performance for ease of use."
 authors = ["Kethas <kethas@asphyx.dev>"]
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 license-file = "LICENSE"
 repository = "https://github.com/Kethas/psi"
@@ -13,3 +13,4 @@ categories = ["parsing"]
 include = ["**/*.rs", "Cargo.toml"]
 
 [dependencies]
+derive_more = "0.99.17"

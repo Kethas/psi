@@ -44,10 +44,15 @@ let rules = rules! {
 let result = rules.parse_entire("start", "Hello, Jimmy!");
 ```
 
-Running the above code will yield a `ParseValue::List` representing the list `["Hello, ", "Jimmy", "!"]` as `ParseValue::Token`s.
-In order to make the parsed output more useful, transformer actions can be attributed to each rule definition using `=>`.
+Running the above code will yield a list of tokens (`["Hello, ", "Jimmy", "!"]`).
+It is returned as a `ParseValue`, which is an `Arc<dyn Any>`.
+In order to extract the values you want, you can use `.downcast_ref::<Vec<ParseValue>()` (or any type you wish to match on). In this case, each item in the `Vec<ParseValue>` can be downcast into a `psi_parser::Token`, which represents a matched terminal.
+
+In order to make the parse output more useful, transformer actions can be attributed to each rule definition using `=>`.
 These transformer actions are expressions of the type `Fn(&Vec<ParseValue>) -> ParseValue`.
-Currently, the best way to use these actions is to match on indices and clone when needed.
+Currently, the best way to use these actions is to match on indices using `downcast_ref` (as above) and clone when needed.
+
+You can return anything as a `ParseValue`, as long as it has a `'static` lifetime, by using `.into_value()`, as seen below.
 
 Make sure to remember the semicolon (`;`) at the end of the transformer expression!
 
@@ -60,20 +65,25 @@ let rules = rules!{
     }
 
     list {
-        ("[" list_inner "]") => |v| v[1].clone();
+        ("[" list_inner "]") => |v| v[1].clone().into_value();
         // Empty list
-        ("[]") => |_| ParseValue::List(Vec::new());
+        ("[]") => |_| (Vec::<Token>::new()).into_value();
     }
 
     list_inner {
-        (name) => |v| ParseValue::List(v.clone());
+        (name) => |v| {
+            match v[0].downcast_ref::<Token>() {
+                Some(token) => vec![token.clone()].into_value(),
+                _ => unreachable!()
+            }
 
-        // v[0] and v[2] are always lists, so we match against them and use unreachable! for the rest
-        (list_inner "," name) => |v| match (&v[0], &v[2]) {
-            (ParseValue::List(v0), ParseValue::List(v2)) => {
-                let mut vec = v0.clone();
-                vec.extend(v2.clone());
-                ParseValue::List(vec)
+        };
+
+        (list_inner "," name) => |v| match (v[0].downcast_ref::<Vec<Token>>(), v[2].downcast_ref::<Token>()) {
+            (Some(list), Some(name)) => {
+                let mut vec = list.clone();
+                vec.extend(name.clone());
+                vec.into_value()
             }
 
             _ => unreachable!()
@@ -90,17 +100,16 @@ let rules = rules!{
 };
 ```
 
-Using the above code to parse "[John,John,Josh,Jimmy,Jane,Jeremiah]" will yield a `ParseValue::List` containing a `Vec` of `ParseValue::Token` of the names.
+Using the above code to parse "[John,John,Josh,Jimmy,Jane,Jeremiah]" will yield a `ParseValue` that can be downcast to a `Vec` of `psi_parser::Token` of the names.
 
-The default functionality when a transformer isn't specified is to return the `Vec<ParseValue>` inside a `ParseValue::List`, or return the single value inside the `Vec` if it only has one value.
+The default functionality when a transformer isn't specified is to return the `Vec<ParseValue>` as a `ParseValue`, or return the single value inside the `Vec` if it only has one value.
 
-You can additionally use a custom type for `ParseValue::Value` using `#[type = Type]`
+You can additionally use a any type as a `ParseValue` as long as its lifetime is `'static`.
 
 ```rust
 use psi_parser::prelude::*;
 
-// Your type must implement these three traits
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone)]
 enum Name {
     John,
     Jane,
@@ -110,26 +119,19 @@ enum Name {
 }
 
 let rules = rules! {
-    // Declare that our custom type is Name
-    #[type = Name]
-
     start {
         (name)
     }
 
     name {
-        ("John") => |_| ParseValue::Value(Name::John);
-        ("Jane") => |_| ParseValue::Value(Name::Jane);
-        ("Jeremiah") => |_| ParseValue::Value(Name::Jeremiah);
-        ("Josh") => |_| ParseValue::Value(Name::Josh);
-        ("Jimmy") => |_| Name::Jimmy.into_value(); // You can also use .into_value()
+        ("John") => |_| Name::John.into_value();
+        ("Jane") => |_| Name::Jane.into_value();
+        ("Jeremiah") => |_| Name::Jeremiah.into_value();
+        ("Josh") => |_| Name::Josh.into_value();
+        ("Jimmy") => |_| Name::Jimmy.into_value();
     }
 }
 ```
-
-Note that you can use the `Into` trait for the `List`, `Integer`, `Float`, `String`, and `Map` variants of `ParseValue` with their respective types. For the `Value` variant use `.into_value()` which is included in the prelude.
-
-This isn't the best method, but it does work until there's a better alternative.
 
 ## Known issues
 
@@ -140,6 +142,8 @@ This isn't the best method, but it does work until there's a better alternative.
 
 See the `examples` directory for the examples.
 They can be run using `cargo run --example <example_name>`.
+
+Shorter examples can be found at the `tests` module at the end of `src/lib.rs`.
 
 ## License
 

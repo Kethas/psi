@@ -1,70 +1,40 @@
 use std::{
+    any::Any,
     cmp::Ordering,
     collections::{HashMap, HashSet},
     fmt::Debug,
     str::Chars,
+    sync::Arc,
 };
+
+use derive_more::{Deref, DerefMut, Display, From};
 
 pub mod prelude {
     pub use super::{
-        rule, rules, IntoParseValue as _, ParseError, ParseResult, ParseValue, Rule, Rules,
+        rule, rules, IntoParseValue as _, ParseError, ParseResult, ParseValue, Rule, Rules, Token,
         Transformer,
     };
 }
 
-// Parsing Result Structs
+// Parsing Result Types
+pub type ParseValue = Arc<dyn Any>;
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum ParseValue<T>
-where
-    T: Clone + Debug + PartialEq,
-{
-    Token(String),
-    List(Vec<ParseValue<T>>),
-    Integer(i32),
-    Float(f32),
-    String(String),
-    Map(HashMap<String, ParseValue<T>>),
-    Value(T),
+pub trait IntoParseValue {
+    fn into_value(self) -> ParseValue;
 }
 
-impl<T: Clone + Debug + PartialEq> From<Vec<ParseValue<T>>> for ParseValue<T> {
-    fn from(value: Vec<ParseValue<T>>) -> Self {
-        ParseValue::List(value)
+impl<T: Any> IntoParseValue for T {
+    fn into_value(self) -> ParseValue {
+        Arc::new(self)
     }
 }
 
-impl<T: Clone + Debug + PartialEq> From<i32> for ParseValue<T> {
-    fn from(value: i32) -> Self {
-        ParseValue::Integer(value)
-    }
-}
+#[derive(Clone, Debug, Display, Deref, DerefMut, From, Eq, PartialEq, Hash)]
+pub struct Token(String);
 
-impl<T: Clone + Debug + PartialEq> From<f32> for ParseValue<T> {
-    fn from(value: f32) -> Self {
-        ParseValue::Float(value)
-    }
-}
-
-impl<T: Clone + Debug + PartialEq> From<String> for ParseValue<T> {
-    fn from(value: String) -> Self {
-        ParseValue::String(value)
-    }
-}
-
-impl<T: Clone + Debug + PartialEq> From<HashMap<String, ParseValue<T>>> for ParseValue<T> {
-    fn from(value: HashMap<String, ParseValue<T>>) -> Self {
-        ParseValue::Map(value)
-    }
-}
-
-pub trait IntoParseValue: Clone + Debug + PartialEq {
-    fn into_value(self) -> ParseValue<Self>;
-}
-
-impl<T: Clone + Debug + PartialEq> IntoParseValue for T {
-    fn into_value(self) -> ParseValue<Self> {
-        ParseValue::Value(self)
+impl AsRef<str> for Token {
+    fn as_ref(&self) -> &str {
+        self.0.as_ref()
     }
 }
 
@@ -88,9 +58,9 @@ pub enum ParseError {
 
 // Long Type Aliases
 
-pub type ParseResult<'a, T> = Result<Option<(ParseValue<T>, Input<'a>)>, ParseError>;
+pub type ParseResult<'a> = Result<Option<(ParseValue, Input<'a>)>, ParseError>;
 
-pub type Transformer<T> = Box<dyn Fn(&Vec<ParseValue<T>>) -> ParseValue<T>>;
+pub type Transformer = Box<dyn Fn(&Vec<ParseValue>) -> ParseValue>;
 
 // Input
 
@@ -162,26 +132,26 @@ pub enum RulePart {
     Recurse,
 }
 
-pub enum RuleTree<T: Clone + Debug + PartialEq> {
+pub enum RuleTree {
     Part {
         part: RulePart,
-        nexts: Vec<RuleTree<T>>,
+        nexts: Vec<RuleTree>,
     },
 
     End {
-        transformer: Option<Transformer<T>>,
+        transformer: Option<Transformer>,
     },
 }
 
-impl<T: Clone + Debug + PartialEq> RuleTree<T> {
+impl RuleTree {
     fn parse<'a>(
         &self,
-        rules: &Rules<T>,
+        rules: &Rules,
         current_rule: &str,
         input: Input<'a>,
-        buffer: &Vec<ParseValue<T>>,
+        buffer: &Vec<ParseValue>,
         recursive: bool,
-    ) -> ParseResult<'a, T> {
+    ) -> ParseResult<'a> {
         match self {
             RuleTree::Part { part, nexts } => match part {
                 RulePart::Term(literal) => {
@@ -222,7 +192,7 @@ impl<T: Clone + Debug + PartialEq> RuleTree<T> {
                         input = i;
                     }
 
-                    let parse_value = ParseValue::Token(literal.clone());
+                    let parse_value = Arc::new(Token(literal.clone()));
 
                     let mut buffer = buffer.clone();
                     buffer.push(parse_value);
@@ -261,7 +231,7 @@ impl<T: Clone + Debug + PartialEq> RuleTree<T> {
                                             if buffer.len() == 1 {
                                                 buffer.remove(0)
                                             } else {
-                                                ParseValue::List(buffer)
+                                                Arc::new(buffer)
                                             },
                                             input,
                                         )),
@@ -279,7 +249,7 @@ impl<T: Clone + Debug + PartialEq> RuleTree<T> {
                         if buffer.len() == 1 {
                             buffer[0].clone()
                         } else {
-                            ParseValue::List(buffer.clone())
+                            Arc::new(buffer.clone())
                         }
                     }
                 };
@@ -290,14 +260,14 @@ impl<T: Clone + Debug + PartialEq> RuleTree<T> {
     }
 }
 
-pub struct Rule<T: Clone + Debug + PartialEq> {
+pub struct Rule {
     pub name: String,
     pub parts: Vec<RulePart>,
-    pub transformer: Option<Transformer<T>>,
+    pub transformer: Option<Transformer>,
 }
 
-impl<T: Clone + Debug + PartialEq> From<Rule<T>> for RuleTree<T> {
-    fn from(val: Rule<T>) -> Self {
+impl From<Rule> for RuleTree {
+    fn from(val: Rule) -> Self {
         let mut tree = RuleTree::End {
             transformer: val.transformer,
         };
@@ -324,11 +294,11 @@ impl<T: Clone + Debug + PartialEq> From<Rule<T>> for RuleTree<T> {
     }
 }
 
-pub struct Rules<T: Clone + Debug + PartialEq>(HashMap<String, Vec<RuleTree<T>>>);
+pub struct Rules(HashMap<String, Vec<RuleTree>>);
 
-impl<T: Clone + Debug + PartialEq> Rules<T> {
-    pub fn new(rules: impl IntoIterator<Item = Rule<T>>) -> Self {
-        let mut map: HashMap<String, Vec<RuleTree<T>>> = HashMap::new();
+impl Rules {
+    pub fn new(rules: impl IntoIterator<Item = Rule>) -> Self {
+        let mut map: HashMap<String, Vec<RuleTree>> = HashMap::new();
 
         for rule in rules {
             match map.entry(rule.name.clone()) {
@@ -352,7 +322,7 @@ impl<T: Clone + Debug + PartialEq> Rules<T> {
         &self,
         start_rule: &str,
         input: impl Into<Input<'a>>,
-    ) -> Result<ParseValue<T>, ParseError> {
+    ) -> Result<ParseValue, ParseError> {
         self.parse_rule(start_rule, input.into(), vec![], false)
             .and_then(|res| match res {
                 Some((value, mut input)) => {
@@ -370,7 +340,7 @@ impl<T: Clone + Debug + PartialEq> Rules<T> {
                         Ok(value)
                     }
                 }
-                None => Ok(ParseValue::List(Vec::new())),
+                None => Ok(Arc::new(Vec::<ParseValue>::new())),
             })
     }
 
@@ -378,11 +348,11 @@ impl<T: Clone + Debug + PartialEq> Rules<T> {
         &self,
         start_rule: &str,
         input: impl Into<Input<'a>>,
-    ) -> Result<ParseValue<T>, ParseError> {
+    ) -> Result<ParseValue, ParseError> {
         self.parse_rule(start_rule, input.into(), vec![], false)
             .map(|res| {
                 res.map(|x| x.0)
-                    .unwrap_or_else(|| ParseValue::List(Vec::new()))
+                    .unwrap_or_else(|| Arc::new(Vec::<ParseValue>::new()))
             })
     }
 
@@ -390,9 +360,9 @@ impl<T: Clone + Debug + PartialEq> Rules<T> {
         &self,
         rule_name: &str,
         input: Input<'a>,
-        buffer: Vec<ParseValue<T>>,
+        buffer: Vec<ParseValue>,
         recursive: bool,
-    ) -> ParseResult<'a, T> {
+    ) -> ParseResult<'a> {
         self.0
             .get(rule_name)
             .ok_or_else(|| ParseError::RuleNotFound {
@@ -404,11 +374,11 @@ impl<T: Clone + Debug + PartialEq> Rules<T> {
     fn parse_rule_trees<'a>(
         &self,
         current_rule: &str,
-        rule_trees: &[RuleTree<T>],
+        rule_trees: &[RuleTree],
         input: Input<'a>,
-        buffer: Vec<ParseValue<T>>,
+        buffer: Vec<ParseValue>,
         recursive: bool,
-    ) -> ParseResult<'a, T> {
+    ) -> ParseResult<'a> {
         let mut errors = HashSet::new();
         for tree in rule_trees {
             match tree.parse(self, current_rule, input.clone(), &buffer, recursive) {
@@ -435,10 +405,10 @@ impl<T: Clone + Debug + PartialEq> Rules<T> {
     fn parse_recursively<'a>(
         &self,
         current_rule: &str,
-        rule_trees: &[RuleTree<T>],
+        rule_trees: &[RuleTree],
         input: Input<'a>,
-        buffer: &Vec<ParseValue<T>>,
-    ) -> Option<(ParseValue<T>, Input<'a>)> {
+        buffer: &Vec<ParseValue>,
+    ) -> Option<(ParseValue, Input<'a>)> {
         match self.parse_rule_trees(
             current_rule,
             rule_trees,
@@ -450,7 +420,7 @@ impl<T: Clone + Debug + PartialEq> Rules<T> {
                 if buffer.len() == 1 {
                     Some((buffer[0].clone(), input))
                 } else {
-                    Some((ParseValue::List(buffer.clone()), input))
+                    Some((Arc::new(buffer.clone()), input))
                 }
             }
             Ok(Some((v, input))) => {
@@ -460,45 +430,44 @@ impl<T: Clone + Debug + PartialEq> Rules<T> {
         }
     }
 
-    fn smush(trees: Vec<RuleTree<T>>) -> Vec<RuleTree<T>> {
-        let mut v =
-            trees
-                .into_iter()
-                .fold(vec![], |mut trees: Vec<RuleTree<T>>, tree| match tree {
-                    RuleTree::Part { part, nexts } => {
-                        for t in &mut trees {
-                            match t {
-                                RuleTree::Part { part: p, nexts: n } if p == &part => {
-                                    n.extend(nexts);
+    fn smush(trees: Vec<RuleTree>) -> Vec<RuleTree> {
+        let mut v = trees
+            .into_iter()
+            .fold(vec![], |mut trees: Vec<RuleTree>, tree| match tree {
+                RuleTree::Part { part, nexts } => {
+                    for t in &mut trees {
+                        match t {
+                            RuleTree::Part { part: p, nexts: n } if p == &part => {
+                                n.extend(nexts);
 
-                                    let nexts = std::mem::take(n);
-                                    *n = Self::smush(nexts);
+                                let nexts = std::mem::take(n);
+                                *n = Self::smush(nexts);
 
-                                    return trees;
-                                }
-                                _ => {}
-                            }
-                        }
-
-                        trees.push(RuleTree::Part {
-                            part,
-                            nexts: Self::smush(nexts),
-                        });
-
-                        trees
-                    }
-                    RuleTree::End { transformer } => {
-                        for t in &trees {
-                            if let RuleTree::End { .. } = t {
                                 return trees;
                             }
+                            _ => {}
                         }
-
-                        trees.push(RuleTree::End { transformer });
-
-                        trees
                     }
-                });
+
+                    trees.push(RuleTree::Part {
+                        part,
+                        nexts: Self::smush(nexts),
+                    });
+
+                    trees
+                }
+                RuleTree::End { transformer } => {
+                    for t in &trees {
+                        if let RuleTree::End { .. } = t {
+                            return trees;
+                        }
+                    }
+
+                    trees.push(RuleTree::End { transformer });
+
+                    trees
+                }
+            });
 
         v.sort_by(|a, b| match (b, a) {
             (RuleTree::Part { .. }, RuleTree::End { .. }) => Ordering::Greater,
@@ -537,11 +506,12 @@ macro_rules! rule_part {
 #[macro_export]
 macro_rules! rule {
     ($name:ident: ($($tt:tt)*) $(=> $transformer:expr)?) => {{
+
         #[allow(unused_variables)]
-        let transformer: Option<Box<dyn Fn(&Vec<ParseValue<()>>) -> ParseValue<()>>> = None;
+        let transformer: Option<Transformer> = None;
 
         $(
-            let transformer: Option<Box<dyn Fn(&Vec<ParseValue<()>>) -> ParseValue<()>>> = Some(Box::new($transformer));
+            let transformer: Option<Transformer> = Some(Box::new($transformer));
         )?
 
         Rule {
@@ -551,20 +521,20 @@ macro_rules! rule {
         }
     }};
 
-    (#[type = $type:ty] $name:ident: ($($tt:tt)*) $(=> $transformer:expr)?) => {{
-        #[allow(unused_variables)]
-        let transformer: Option<Box<dyn Fn(&Vec<ParseValue<$type>>) -> ParseValue<$type>>> = None;
+    // (#[type = $type:ty] $name:ident: ($($tt:tt)*) $(=> $transformer:expr)?) => {{
+    //     #[allow(unused_variables)]
+    //     let transformer: Option<Box<dyn Fn(&Vec<ParseValue<$type>>) -> ParseValue<$type>>> = None;
 
-        $(
-            let transformer: Option<Box<dyn Fn(&Vec<ParseValue<$type>>) -> ParseValue<$type>>> = Some(Box::new($transformer));
-        )?
+    //     $(
+    //         let transformer: Option<Box<dyn Fn(&Vec<ParseValue<$type>>) -> ParseValue<$type>>> = Some(Box::new($transformer));
+    //     )?
 
-        Rule {
-            name: stringify!($name).to_owned(),
-            parts: vec![$(psi_parser::rule_part!($tt)),*],
-            transformer
-        }
-    }};
+    //     Rule {
+    //         name: stringify!($name).to_owned(),
+    //         parts: vec![$(psi_parser::rule_part!($tt)),*],
+    //         transformer
+    //     }
+    // }};
 }
 
 #[allow(dead_code)]
@@ -586,34 +556,36 @@ macro_rules! rules {
             rules.push(rule!($rule_name: ($($tt)*) $(=> $transformer)?).into());
         )*)*
 
-        Rules::<()>::new(rules)
+        Rules::new(rules)
     }};
 
-    (
-        #[type = $type:ty]
+    // (
+    //     #[type = $type:ty]
 
-        $(
-            $rule_name:ident {
-                $(
-                    ($( $tt:tt )*)
-                    $(=> $transformer:expr;)?
-                )+
-            }
-        )+
-    ) => {{
-        let mut rules = Vec::new();
+    //     $(
+    //         $rule_name:ident {
+    //             $(
+    //                 ($( $tt:tt )*)
+    //                 $(=> $transformer:expr;)?
+    //             )+
+    //         }
+    //     )+
+    // ) => {{
+    //     let mut rules = Vec::new();
 
-        $($(
-            rules.push(rule!(#[type = $type] $rule_name: ($($tt)*) $(=> $transformer)?).into());
-        )*)*
+    //     $($(
+    //         rules.push(rule!(#[type = $type] $rule_name: ($($tt)*) $(=> $transformer)?).into());
+    //     )*)*
 
-        Rules::<$type>::new(rules)
-    }};
+    //     Rules::<$type>::new(rules)
+    // }};
 }
 
 #[cfg(test)]
 mod tests {
-    use crate as psi_parser;
+    use std::sync::Arc;
+
+    use crate::{self as psi_parser};
     use psi_parser::prelude::*;
 
     #[test]
@@ -631,12 +603,20 @@ mod tests {
 
         let result = rules.parse("start", input);
 
+        let result = result
+            .expect("Could not parse")
+            .downcast_ref::<Vec<ParseValue>>()
+            .expect("Result should be a Vec")
+            .iter()
+            .map(|x| x.downcast_ref::<Token>().expect("Should be Token").clone())
+            .collect::<Vec<_>>();
+
         assert_eq!(
-            Ok(ParseValue::List(vec![
-                ParseValue::Token("hello".to_owned()),
-                ParseValue::Token(" ".to_owned()),
-                ParseValue::Token("world".to_owned())
-            ])),
+            vec![
+                Token("hello".to_owned()),
+                Token(" ".to_owned()),
+                Token("world".to_owned())
+            ],
             result
         );
     }
@@ -645,19 +625,22 @@ mod tests {
     fn aab() {
         let rules = rules! {
             start { (aab) }
-            aab { ("b")
-                 ("a" aab) => |v| {
-                    let rest = v[1].clone();
+            aab {
+                ("b")
+                ("a" aab) => |v| {
+                    if let Some(mut list) = v[1].downcast_ref::<Vec<Token>>().cloned() {
+                        list.insert(0, v[0].clone().downcast_ref::<Token>().unwrap().clone());
 
-                    if let ParseValue::List(mut list) = rest {
-                        list.insert(0, v[0].clone());
-
-                        list.into()
+                        list.into_value()
                     } else {
-                        vec![v[0].clone(), rest].into()
+                        v
+                            .iter()
+                            .map(|token| token.downcast_ref::<Token>().unwrap().clone())
+                            .collect::<Vec<Token>>()
+                            .into_value()
                     }
-                 };
-               }
+                };
+            }
         };
 
         let input0 = "b";
@@ -667,46 +650,59 @@ mod tests {
         let input4 = "c";
 
         assert_eq!(
-            Ok(ParseValue::Token("b".to_owned())),
-            rules.parse("start", input0)
+            Some(Token("b".to_owned())),
+            rules
+                .parse("start", input0)
+                .expect("Should be parsed")
+                .downcast_ref()
+                .cloned()
         );
 
         assert_eq!(
-            Ok(ParseValue::List(vec![
-                ParseValue::Token("a".to_owned()),
-                ParseValue::Token("b".to_owned())
-            ])),
-            rules.parse("start", input1)
+            Some(vec![Token("a".to_owned()), Token("b".to_owned())]),
+            rules
+                .parse("start", input1)
+                .expect("Should be parsed")
+                .downcast_ref()
+                .cloned()
         );
 
         assert_eq!(
-            Ok(ParseValue::List(vec![
-                ParseValue::Token("a".to_owned()),
-                ParseValue::Token("a".to_owned()),
-                ParseValue::Token("b".to_owned())
-            ])),
-            rules.parse("start", input2)
+            Some(vec![
+                Token("a".to_owned()),
+                Token("a".to_owned()),
+                Token("b".to_owned())
+            ]),
+            rules
+                .parse("start", input2)
+                .expect("Should be parsed")
+                .downcast_ref()
+                .cloned()
         );
 
         assert_eq!(
-            Ok(ParseValue::List(vec![
-                ParseValue::Token("a".to_owned()),
-                ParseValue::Token("a".to_owned()),
-                ParseValue::Token("a".to_owned()),
-                ParseValue::Token("b".to_owned())
-            ])),
-            rules.parse("start", input3)
+            Some(vec![
+                Token("a".to_owned()),
+                Token("a".to_owned()),
+                Token("a".to_owned()),
+                Token("b".to_owned())
+            ]),
+            rules
+                .parse("start", input3)
+                .expect("Should be parsed")
+                .downcast_ref()
+                .cloned()
         );
 
         assert_eq!(
-            Err(ParseError::UnexpectedChar {
+            Some(ParseError::UnexpectedChar {
                 current_rule: "aab".to_owned(),
                 char: Some('c'),
                 pos: 0,
                 row: 1,
                 col: 1,
             }),
-            rules.parse("start", input4)
+            rules.parse("start", input4).err()
         );
     }
 
@@ -729,8 +725,8 @@ mod tests {
             term {
                 (factor)
                 (term ws "+" ws term) => |v| {
-                    match (&v[0], &v[4]) {
-                        (ParseValue::Integer(a), ParseValue::Integer(b)) => (a + b).into(),
+                    match (v[0].downcast_ref::<i32>(), v[4].downcast_ref::<i32>()) {
+                        (Some(a), Some(b)) => (a + b).into_value(),
                         _ => unreachable!()
                     }
                 };
@@ -740,8 +736,8 @@ mod tests {
                 (int)
                 ("(" ws expr ws ")") => |v| v[2].clone();
                 (factor ws "*" ws factor) => |v| {
-                    match (&v[0], &v[4]) {
-                        (ParseValue::Integer(a), ParseValue::Integer(b)) => (a * b).into(),
+                    match (v[0].downcast_ref::<i32>(), v[4].downcast_ref::<i32>()) {
+                        (Some(a), Some(b)) => (a * b).into_value(),
                         _ => unreachable!()
                     }
                 };
@@ -760,26 +756,26 @@ mod tests {
             }
 
             int {
-                ("0") => |_| ParseValue::Integer(0);
-                (_int) => |v| match &v[0] {
-                    ParseValue::String(s) => ParseValue::Integer(s.parse().unwrap()),
+                ("0") => |_| Arc::new(0);
+                (_int) => |v| match v[0].downcast_ref::<String>() {
+                    Some(s) => s.parse::<i32>().unwrap().into_value(),
                     _ => unreachable!(),
                 };
             }
 
             _int {
-                (digit_nonzero) => |v| match &v[0] {
-                    ParseValue::Token(digit) => digit.clone().into(),
+                (digit_nonzero) => |v| match v[0].downcast_ref::<Token>() {
+                    Some(digit) => digit.to_string().into_value(),
                     _ => unreachable!()
                 };
 
-                (_int digit_nonzero) => |v| match (&v[0], &v[1]) {
-                    (ParseValue::String(int), ParseValue::Token(digit)) => format!("{int}{digit}").into(),
+                (_int digit_nonzero) => |v| match (v[0].downcast_ref::<String>(), v[1].downcast_ref::<Token>()) {
+                    (Some(int), Some(digit)) => format!("{int}{digit}").into_value(),
                     _ => unreachable!()
                 };
 
-                (_int "0") => |v| match &v[0] {
-                    ParseValue::String(int) => format!("{int}0").into(),
+                (_int "0") => |v| match v[0].downcast_ref::<String>() {
+                    Some(int) => format!("{int}0").into_value(),
                     _ => unreachable!()
                 };
             }
@@ -791,6 +787,12 @@ mod tests {
 
         let result = rules.parse("start", input);
 
-        assert_eq!(Ok(ParseValue::Integer(expected_result)), result)
+        assert_eq!(
+            Some(expected_result),
+            result
+                .expect("Should be parsed")
+                .downcast_ref::<i32>()
+                .cloned()
+        )
     }
 }
