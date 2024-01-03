@@ -3,8 +3,8 @@ use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},
     fmt::Debug,
+    rc::Rc,
     str::Chars,
-    sync::Arc,
 };
 
 use derive_more::{Deref, DerefMut, Display, From};
@@ -17,7 +17,7 @@ pub mod prelude {
 }
 
 // Parsing Result Types
-pub type ParseValue = Arc<dyn Any>;
+pub type ParseValue = Rc<dyn Any>;
 
 pub trait IntoParseValue {
     fn into_value(self) -> ParseValue;
@@ -25,7 +25,7 @@ pub trait IntoParseValue {
 
 impl<T: Any> IntoParseValue for T {
     fn into_value(self) -> ParseValue {
-        Arc::new(self)
+        Rc::new(self)
     }
 }
 
@@ -192,7 +192,7 @@ impl RuleTree {
                         input = i;
                     }
 
-                    let parse_value = Arc::new(Token(literal.clone()));
+                    let parse_value = Rc::new(Token(literal.clone()));
 
                     let mut buffer = buffer.clone();
                     buffer.push(parse_value);
@@ -231,7 +231,7 @@ impl RuleTree {
                                             if buffer.len() == 1 {
                                                 buffer.remove(0)
                                             } else {
-                                                Arc::new(buffer)
+                                                Rc::new(buffer)
                                             },
                                             input,
                                         )),
@@ -249,7 +249,7 @@ impl RuleTree {
                         if buffer.len() == 1 {
                             buffer[0].clone()
                         } else {
-                            Arc::new(buffer.clone())
+                            Rc::new(buffer.clone())
                         }
                     }
                 };
@@ -340,7 +340,7 @@ impl Rules {
                         Ok(value)
                     }
                 }
-                None => Ok(Arc::new(Vec::<ParseValue>::new())),
+                None => Ok(Rc::new(Vec::<ParseValue>::new())),
             })
     }
 
@@ -352,7 +352,7 @@ impl Rules {
         self.parse_rule(start_rule, input.into(), vec![], false)
             .map(|res| {
                 res.map(|x| x.0)
-                    .unwrap_or_else(|| Arc::new(Vec::<ParseValue>::new()))
+                    .unwrap_or_else(|| Rc::new(Vec::<ParseValue>::new()))
             })
     }
 
@@ -420,7 +420,7 @@ impl Rules {
                 if buffer.len() == 1 {
                     Some((buffer[0].clone(), input))
                 } else {
-                    Some((Arc::new(buffer.clone()), input))
+                    Some((Rc::new(buffer.clone()), input))
                 }
             }
             Ok(Some((v, input))) => {
@@ -583,8 +583,6 @@ macro_rules! rules {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use crate::{self as psi_parser};
     use psi_parser::prelude::*;
 
@@ -756,7 +754,7 @@ mod tests {
             }
 
             int {
-                ("0") => |_| Arc::new(0);
+                ("0") => |_| 0.into_value();
                 (_int) => |v| match v[0].downcast_ref::<String>() {
                     Some(s) => s.parse::<i32>().unwrap().into_value(),
                     _ => unreachable!(),
