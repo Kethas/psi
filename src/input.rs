@@ -1,4 +1,4 @@
-use std::str::Chars;
+use std::{fmt::Display, str::Chars};
 
 #[derive(Clone)]
 pub struct Input<'a> {
@@ -40,6 +40,12 @@ impl<'a> Input<'a> {
 
     pub fn row_col(&self) -> (usize, usize) {
         (self.row, self.col)
+    }
+}
+
+impl<'a> Display for Input<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.chars.as_str())
     }
 }
 
