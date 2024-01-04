@@ -13,7 +13,7 @@ fn hello_world() {
 
     let input = "hello world";
 
-    let result = rules.parse("start", input);
+    let result = rules.parse_proc("start", input);
 
     let result = result
         .expect("Could not parse")
@@ -59,12 +59,11 @@ fn aab() {
     let input1 = "ab";
     let input2 = "aab";
     let input3 = "aaab";
-    let input4 = "c";
 
     assert_eq!(
         Some(Token::from("b".to_owned())),
         rules
-            .parse("start", input0)
+            .parse_proc("start", input0)
             .expect("Should be parsed")
             .downcast_ref()
             .cloned()
@@ -76,7 +75,7 @@ fn aab() {
             Token::from("b".to_owned())
         ]),
         rules
-            .parse("start", input1)
+            .parse_proc("start", input1)
             .expect("Should be parsed")
             .downcast_ref()
             .cloned()
@@ -89,7 +88,7 @@ fn aab() {
             Token::from("b".to_owned())
         ]),
         rules
-            .parse("start", input2)
+            .parse_proc("start", input2)
             .expect("Should be parsed")
             .downcast_ref()
             .cloned()
@@ -103,21 +102,30 @@ fn aab() {
             Token::from("b".to_owned())
         ]),
         rules
-            .parse("start", input3)
+            .parse_proc("start", input3)
             .expect("Should be parsed")
             .downcast_ref()
             .cloned()
     );
 
+    let times = 1000;
+
+    let input_huge = (0..times).map(|_| 'a').chain(['b']).collect::<String>();
+
+    println!("input_huge: \"{input_huge}\"");
+
     assert_eq!(
-        Some(ParseError::UnexpectedChar {
-            current_rule: "aab".to_owned(),
-            char: Some('c'),
-            pos: 0,
-            row: 1,
-            col: 1,
-        }),
-        rules.parse("start", input4).err()
+        Some(
+            (0..times)
+                .map(|_| Token::from("a".to_owned()))
+                .chain([Token::from("b".to_owned())])
+                .collect::<Vec<Token>>()
+        ),
+        rules
+            .parse_proc("start", &input_huge)
+            .expect("Should be parsed")
+            .downcast_ref()
+            .cloned()
     );
 }
 
@@ -200,7 +208,7 @@ fn calculator() {
 
     let expected_result = 12 * 5 + 16 * 2;
 
-    let result = rules.parse("start", input);
+    let result = rules.parse_proc("start", input);
 
     assert_eq!(
         Some(expected_result),
@@ -209,4 +217,53 @@ fn calculator() {
             .downcast_ref::<i32>()
             .cloned()
     )
+}
+
+#[test]
+fn left_recursion() {
+    let rules = rules! {
+        start {
+            (expr)
+        }
+
+        expr {
+            ("x") => |_| "x".to_owned().into_value();
+            (expr "+" expr)
+            => |v| format!(
+                "{}+{}",
+                v[0].downcast_ref::<String>().unwrap(),
+                v[2].downcast_ref::<String>().unwrap()
+            ).into_value();
+        }
+    };
+
+    let input0 = "x";
+
+    assert_eq!(
+        Some(&String::from("x")),
+        rules
+            .parse_proc("start", input0)
+            .expect("Should be parsed")
+            .downcast_ref(),
+    );
+
+    let input1 = "x+x";
+
+    assert_eq!(
+        Some(&String::from("x+x")),
+        rules
+            .parse_proc("start", input1)
+            .expect("Should be parsed")
+            .downcast_ref(),
+    );
+
+    let input2 = "x+x+x";
+
+    assert_eq!(
+        Some(&String::from("x+x+x")),
+        rules
+            .parse_proc("start", input2)
+            .expect("Should be parsed")
+            .downcast_ref(),
+    );
 }

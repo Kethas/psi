@@ -36,6 +36,13 @@ pub enum ParseError {
         row: usize,
         col: usize,
     },
+    UnexpectedToken {
+        current_rule: String,
+        token: String,
+        pos: usize,
+        row: usize,
+        col: usize,
+    },
     MultipleErrors {
         current_rule: String,
         errors: Vec<ParseError>,

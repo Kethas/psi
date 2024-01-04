@@ -8,6 +8,12 @@ macro_rules! rule_part {
     ($rule:ident) => {
         psi_parser::rule::RulePart::NonTerm(stringify!($rule).to_owned())
     };
+
+    ((! $($lit:literal)*)) => {
+        psi_parser::rule::RulePart::Not([$(String::from($lit)),*].into_iter().collect())
+    }
+
+
 }
 
 #[allow(dead_code)]
