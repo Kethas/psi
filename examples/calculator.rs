@@ -19,13 +19,13 @@ fn main() {
 
         term {
             (factor)
-            (term ws "+" ws term) => |v| {
+            (term ws "+" ws factor) => |v| {
                 match (v[0].downcast_ref::<f32>(), v[4].downcast_ref::<f32>()) {
                     (Some(a), Some(b)) => (a + b).into_value(),
                     _ => unreachable!()
                 }
             };
-            (term ws "-" ws term) => |v| {
+            (term ws "-" ws factor) => |v| {
                 match (v[0].downcast_ref::<f32>(), v[4].downcast_ref::<f32>()) {
                     (Some(a), Some(b)) => (a - b).into_value(),
                     _ => unreachable!()
@@ -36,13 +36,13 @@ fn main() {
         factor {
             (float)
             ("(" ws expr ws ")") => |v| v[2].clone();
-            (factor ws "*" ws factor) => |v| {
+            (factor ws "*" ws float) => |v| {
                 match (v[0].downcast_ref::<f32>(), v[4].downcast_ref::<f32>()) {
                     (Some(a), Some(b)) => (a * b).into_value(),
                     _ => unreachable!()
                 }
             };
-            (factor ws "/" ws factor) => |v| {
+            (factor ws "/" ws float) => |v| {
                 match (v[0].downcast_ref::<f32>(), v[4].downcast_ref::<f32>()) {
                     (Some(a), Some(b)) => (a / b).into_value(),
                     _ => unreachable!()

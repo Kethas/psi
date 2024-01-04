@@ -29,13 +29,13 @@ fn main() {
 
         term {
             (factor)
-            (term ws "+" ws term) => |v| {
+            (term ws "+" ws factor) => |v| {
                 match (v[0].downcast_ref::<ExprAst>(), v[4].downcast_ref::<ExprAst>()) {
                     (Some(a), Some(b)) => ExprAst::Add(Box::new(a.clone()),Box::new(b.clone())).into_value(),
                     _ => unreachable!()
                 }
             };
-            (term ws "-" ws term) => |v| {
+            (term ws "-" ws factor) => |v| {
                 match (v[0].downcast_ref::<ExprAst>(), v[4].downcast_ref::<ExprAst>()) {
                     (Some(a), Some(b)) => ExprAst::Sub(Box::new(a.clone()),Box::new(b.clone())).into_value(),
                     _ => unreachable!()
@@ -46,13 +46,13 @@ fn main() {
         factor {
             (float)
             ("(" ws expr ws ")") => |v| v[2].clone();
-            (factor ws "*" ws factor) => |v| {
+            (factor ws "*" ws float) => |v| {
                 match (v[0].downcast_ref::<ExprAst>(), v[4].downcast_ref::<ExprAst>()) {
                     (Some(a), Some(b)) => ExprAst::Mul(Box::new(a.clone()),Box::new(b.clone())).into_value(),
                     _ => unreachable!()
                 }
             };
-            (factor ws "/" ws factor) => |v| {
+            (factor ws "/" ws float) => |v| {
                 match (v[0].downcast_ref::<ExprAst>(), v[4].downcast_ref::<ExprAst>()) {
                     (Some(a), Some(b)) => ExprAst::Div(Box::new(a.clone()),Box::new(b.clone())).into_value(),
                     _ => unreachable!()
