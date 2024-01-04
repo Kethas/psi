@@ -495,8 +495,7 @@ struct ParseStackItem<'a, 'i> {
     // The current rule
     rule: &'a str,
     rule_trees: &'a [RuleTree],
-    // The path through the rule
-    path: Vec<usize>,
+    n: usize,
     input: Input<'i>,
 }
 
@@ -505,13 +504,13 @@ impl<'a, 'i> Debug for ParseStackItem<'a, 'i> {
         let ParseStackItem {
             depth,
             rule,
-            path,
+            n,
             input,
             ..
         } = self;
 
         f.write_fmt(format_args!(
-            "({depth}, \"{rule}\", {path:?}, input = \"{input}\")"
+            "({depth}, \"{rule}\", [{n:?}], input = \"{input}\")"
         ))
     }
 }
@@ -524,11 +523,11 @@ fn parse<'a>(
     let rule_trees = rules.0.get(rule).ok_or_else(|| ParseError::RuleNotFound {
         rule_name: rule.to_owned(),
     })?;
-    let mut stack: Vec<ParseStackItem> = vec![ParseStackItem {
+    let mut stack = vec![ParseStackItem {
         depth: 0,
         rule,
         rule_trees,
-        path: vec![0],
+        n: 0,
         input,
     }];
 
@@ -539,19 +538,17 @@ fn parse<'a>(
             break;
         }
 
-        println!("\n\n\n\n");
-        println!("STACK: {stack:#?}");
-        println!("BUFFERS: {buffers:?}");
+        log::debug!("\n\n\n\n");
+        log::debug!("STACK: {stack:#?}");
+        log::debug!("BUFFERS: {buffers:?}");
 
         let ParseStackItem {
             depth,
             rule,
             rule_trees,
-            path,
+            n,
             mut input,
         } = stack.pop().unwrap();
-
-        let n = *path.last().unwrap();
 
         let rule_tree = &rule_trees[n];
 
@@ -562,7 +559,7 @@ fn parse<'a>(
 
                 let success = match part {
                     RulePart::Term(literal) => {
-                        println!("TERM: \"{literal}\"");
+                        log::debug!("TERM: \"{literal}\"");
 
                         let mut literal_chars = literal.chars();
 
@@ -597,13 +594,13 @@ fn parse<'a>(
                         }
                     }
                     RulePart::NonTerm(rule_name) => {
-                        println!("NON_TERM: ({rule_name})");
+                        log::debug!("NON_TERM: ({rule_name})");
                         // push this rule back on the stack
                         stack.push(ParseStackItem {
                             depth,
                             rule,
                             rule_trees,
-                            path,
+                            n,
                             input: start_input,
                         });
 
@@ -619,7 +616,7 @@ fn parse<'a>(
                             depth: depth + 1,
                             rule: rule_name,
                             rule_trees,
-                            path: vec![0],
+                            n: 0,
                             input: input.clone(),
                         };
 
@@ -636,44 +633,38 @@ fn parse<'a>(
                 };
 
                 if success {
-                    println!("TERM SUCCESS");
-
-                    let mut path = path;
-                    path.push(0);
+                    log::debug!("TERM SUCCESS");
 
                     stack.push(ParseStackItem {
                         depth,
                         rule,
                         rule_trees: nexts,
-                        path,
+                        n: 0,
                         input,
                     });
                 } else {
-                    println!("TERM FAIL!");
+                    log::debug!("TERM FAIL!");
 
                     let mut n = n;
                     let mut rule_trees = rule_trees;
-                    let mut path = path;
                     let mut depth = depth;
                     let mut input = start_input.clone();
 
                     'fail: loop {
-                        println!("(fail loop start)");
+                        log::debug!("(fail loop start)");
                         if n + 1 < rule_trees.len() {
                             // increment path
-                            path.pop();
-                            path.push(n + 1);
 
                             stack.push(ParseStackItem {
                                 depth,
                                 rule,
                                 rule_trees,
-                                path,
+                                n: n + 1,
                                 input,
                             });
                             break 'fail;
                         } else {
-                            println!("REMOVING DEPTH {depth}");
+                            log::debug!("REMOVING DEPTH {depth}");
                             'depth: loop {
                                 if let Some(&ParseStackItem { depth: d, .. }) = stack.last() {
                                     if d == depth {
@@ -686,11 +677,11 @@ fn parse<'a>(
                                 }
                             }
 
-                            println!("INTERMEDIATE_STACK: {stack:#?}");
-                            println!("INTERMEDIATE_BUFFERS: {buffers:?}");
+                            log::debug!("INTERMEDIATE_STACK: {stack:#?}");
+                            log::debug!("INTERMEDIATE_BUFFERS: {buffers:?}");
 
                             if let Some(top) = stack.last().cloned() {
-                                n = *top.path.last().unwrap();
+                                n = top.n;
                                 rule_trees = top.rule_trees;
                                 depth = top.depth;
                                 input = top.input;
@@ -705,7 +696,7 @@ fn parse<'a>(
                 }
             }
             RuleTree::End { transformer } => {
-                println!("Reached end!");
+                log::debug!("Reached end!");
 
                 'depth: loop {
                     if let Some(&ParseStackItem { depth: d, .. }) = stack.last() {
@@ -736,7 +727,7 @@ fn parse<'a>(
                 }
 
                 if let Some(stack_top) = stack.last().cloned() {
-                    let nexts = match &stack_top.rule_trees[*stack_top.path.last().unwrap()] {
+                    let nexts = match &stack_top.rule_trees[stack_top.n] {
                         RuleTree::Part {
                             part: RulePart::NonTerm(_),
                             nexts,
@@ -745,18 +736,15 @@ fn parse<'a>(
                         _ => unreachable!(),
                     };
 
-                    let mut path = stack_top.path;
-                    path.push(0);
-
                     stack.push(ParseStackItem {
                         depth: stack_top.depth,
                         rule: stack_top.rule,
                         rule_trees: nexts,
-                        path,
+                        n: 0,
                         input,
                     })
                 } else {
-                    println!("The very end!");
+                    log::debug!("The very end!");
                     // the very end!
                     return Ok((parse_value, input));
                 }

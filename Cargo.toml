@@ -14,3 +14,5 @@ include = ["**/*.rs", "Cargo.toml"]
 
 [dependencies]
 derive_more = "0.99.17"
+env_logger = "0.10.1"
+log = "0.4.20"

@@ -1,7 +1,17 @@
 use super::*;
+use std::io::Write;
+
+fn init() {
+    let _ = env_logger::builder()
+        .is_test(true)
+        .format(|buf, record| writeln!(buf, "{}", record.args()))
+        .try_init();
+}
 
 #[test]
 fn hello_world() {
+    init();
+
     let rules = rules! {
         start {
             (hello_world)
@@ -35,6 +45,8 @@ fn hello_world() {
 
 #[test]
 fn aab() {
+    init();
+
     let rules = rules! {
         start { (aab) }
         aab {
@@ -131,6 +143,8 @@ fn aab() {
 
 #[test]
 fn calculator() {
+    init();
+
     let rules = rules! {
         start {
             (ws term ws) => |v| v[1].clone();
@@ -221,6 +235,8 @@ fn calculator() {
 
 #[test]
 fn left_recursion() {
+    init();
+
     let rules = rules! {
         start {
             (expr)
@@ -228,11 +244,11 @@ fn left_recursion() {
 
         expr {
             ("x") => |_| "x".to_owned().into_value();
-            (expr "+" expr)
+            (expr "+" "x")
             => |v| format!(
                 "{}+{}",
                 v[0].downcast_ref::<String>().unwrap(),
-                v[2].downcast_ref::<String>().unwrap()
+                v[2].downcast_ref::<Token>().unwrap()
             ).into_value();
         }
     };
