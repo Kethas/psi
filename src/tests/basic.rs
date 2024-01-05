@@ -101,11 +101,11 @@ fn aab() {
             .cloned()
     );
 
-    let times = 1000;
+    let times = 40000;
 
     let input_huge = (0..times).map(|_| 'a').chain(['b']).collect::<String>();
 
-    println!("input_huge: \"{input_huge}\"");
+    log::debug!("input_huge: \"{input_huge}\"");
 
     assert_eq!(
         Some(
@@ -202,6 +202,106 @@ fn char_literal() {
                 .expect("Should be parsed.")
                 .downcast_ref()
                 .unwrap()
+        );
+    }
+}
+
+#[test]
+fn import() {
+    init();
+
+    let boolean_rules = rules! {
+        boolean {
+            ("true") => |_| true.into_value();
+            ("false") => |_| false.into_value();
+        }
+    };
+
+    let rules = rules! {
+        #[import (boolean_rules) as boolean]
+
+        start {
+            ((boolean::boolean))
+        }
+    };
+
+    let inputs = [("true", true), ("false", false)];
+
+    for (input, expected_result) in inputs {
+        log::debug!("input = \"{input}\"");
+
+        assert_eq!(
+            Some(&expected_result),
+            rules
+                .parse_proc("start", input)
+                .expect("Should be parsed")
+                .downcast_ref()
+        )
+    }
+}
+
+#[test]
+fn import2() {
+    init();
+
+    struct NamesRules;
+
+    impl From<NamesRules> for Rules {
+        fn from(_: NamesRules) -> Self {
+            rules! {
+                name {
+                    ("John") => |_| "John".to_owned().into_value();
+                    ("James") => |_| "James".to_owned().into_value();
+                    ("Joey") => |_| "Joey".to_owned().into_value();
+                }
+            }
+        }
+    }
+
+    #[derive(Debug, PartialEq)]
+    enum Greeting {
+        Hello(String),
+        Hi(String),
+        Greetings(String),
+    }
+
+    let greeting_rules = rules! {
+        #[import (NamesRules) as names]
+
+        greeting {
+            ("Hello " (names::name) "!") => |v| Greeting::Hello(v[1].downcast_ref::<String>().unwrap().clone()).into_value();
+            ("Hi " (names::name) "!") => |v| Greeting::Hi(v[1].downcast_ref::<String>().unwrap().clone()).into_value();
+            ("Greetings " (names::name) "!") => |v| Greeting::Greetings(v[1].downcast_ref::<String>().unwrap().clone()).into_value();
+        }
+    };
+
+    let rules = rules! {
+        #[import (greeting_rules) as greetings]
+
+        start {
+            ((greetings::greeting))
+        }
+    };
+
+    let inputs = [
+        ("Hello John!", Greeting::Hello("John".to_owned())),
+        ("Hello Joey!", Greeting::Hello("Joey".to_owned())),
+        ("Hi John!", Greeting::Hi("John".to_owned())),
+        ("Greetings James!", Greeting::Greetings("James".to_owned())),
+        ("Greetings John!", Greeting::Greetings("John".to_owned())),
+    ];
+
+    log::debug!("Rules: {:?}", rules.rule_names());
+
+    for (input, expected_result) in inputs {
+        log::debug!("input = \"{input}\"");
+
+        assert_eq!(
+            Some(&expected_result),
+            rules
+                .parse_proc("start", input)
+                .expect("Should be parsed")
+                .downcast_ref()
         );
     }
 }

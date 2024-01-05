@@ -224,6 +224,26 @@ impl RuleTree {
             }
         }
     }
+
+    fn add_namespace(self, namespace: &str) -> RuleTree {
+        match self {
+            RuleTree::Part { part, nexts } => {
+                let part = match part {
+                    RulePart::NonTerm(rule) => RulePart::NonTerm(format!("{namespace}::{rule}")),
+                    part => part,
+                };
+
+                RuleTree::Part {
+                    part,
+                    nexts: nexts
+                        .into_iter()
+                        .map(|tree| tree.add_namespace(namespace))
+                        .collect(),
+                }
+            }
+            tree => tree,
+        }
+    }
 }
 
 pub struct Rule {
@@ -282,6 +302,51 @@ impl Rules {
                 .map(|(rule_name, rule_trees)| (rule_name, Self::smush(rule_trees)))
                 .collect(),
         )
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn rule_names(&self) -> Vec<String> {
+        self.0.keys().cloned().collect()
+    }
+
+    // Adds the given Rules to this one, optionally adding a namespace
+    pub fn import(&mut self, other: Rules, name: Option<String>) {
+        for (rule_name, rule_trees) in other.0.into_iter() {
+            let rule_name = if let Some(namespace) = &name {
+                format!("{namespace}::{rule_name}")
+            } else {
+                rule_name
+            };
+
+            match self.0.entry(rule_name) {
+                std::collections::hash_map::Entry::Occupied(mut o) => {
+                    let rule_trees = if let Some(namespace) = &name {
+                        rule_trees
+                            .into_iter()
+                            .map(|tree| tree.add_namespace(namespace))
+                            .collect::<Vec<_>>()
+                    } else {
+                        rule_trees
+                    };
+
+                    o.get_mut().extend(rule_trees);
+
+                    *o.get_mut() = Self::smush(std::mem::take(o.get_mut()));
+                }
+                std::collections::hash_map::Entry::Vacant(v) => {
+                    let rule_trees = if let Some(namespace) = &name {
+                        rule_trees
+                            .into_iter()
+                            .map(|tree| tree.add_namespace(namespace))
+                            .collect::<Vec<_>>()
+                    } else {
+                        rule_trees
+                    };
+
+                    v.insert(rule_trees);
+                }
+            }
+        }
     }
 
     pub fn parse_entire<'a>(
@@ -719,7 +784,7 @@ fn parse<'a>(
                         rule_trees: nexts,
                         n: 0,
                         input,
-                        prev_path
+                        prev_path,
                     });
                 } else {
                     log::debug!("TERM/NOT FAIL!");

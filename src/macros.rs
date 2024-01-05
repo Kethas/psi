@@ -9,6 +9,11 @@ macro_rules! rule_part {
         psi_parser::rule::RulePart::NonTerm(stringify!($rule).to_owned())
     };
 
+    (($rule:path)) => {{
+        
+        psi_parser::rule::RulePart::NonTerm(stringify!($rule).to_owned())
+    }};
+
     ((! $($lit:literal)*)) => {
         psi_parser::rule::RulePart::Not([$(String::from($lit)),*].into_iter().collect())
     }
@@ -40,6 +45,7 @@ macro_rules! rule {
 #[macro_export]
 macro_rules! rules {
     (
+        $(#[import ($rules_expr:expr) $(as $rules_name:ident)?])*
         $(
             $rule_name:ident {
                 $(
@@ -55,6 +61,14 @@ macro_rules! rules {
             rules.push(rule!($rule_name: ($($tt)*) $(=> $transformer)?).into());
         )*)*
 
-        Rules::new(rules)
+        let rules = Rules::new(rules);
+
+        $(
+            let mut rules = rules;
+            let rules_name: Option<String> = None$(.or(Some(stringify!($rules_name).to_owned())))?;
+            rules.import(Into::<Rules>::into($rules_expr), rules_name);
+        )*
+
+        rules
     }};
 }
