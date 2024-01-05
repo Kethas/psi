@@ -26,11 +26,7 @@ fn hello_world() {
         .collect::<Vec<_>>();
 
     assert_eq!(
-        vec![
-            Token::from("hello".to_owned()),
-            Token::from(" ".to_owned()),
-            Token::from("world".to_owned())
-        ],
+        vec![Token::from("hello"), Token::from(" "), Token::from("world")],
         result
     );
 }
@@ -74,10 +70,7 @@ fn aab() {
     );
 
     assert_eq!(
-        Some(vec![
-            Token::from("a".to_owned()),
-            Token::from("b".to_owned())
-        ]),
+        Some(vec![Token::from("a"), Token::from("b")]),
         rules
             .parse_proc("start", input1)
             .expect("Should be parsed")
@@ -86,11 +79,7 @@ fn aab() {
     );
 
     assert_eq!(
-        Some(vec![
-            Token::from("a".to_owned()),
-            Token::from("a".to_owned()),
-            Token::from("b".to_owned())
-        ]),
+        Some(vec![Token::from("a"), Token::from("a"), Token::from("b")]),
         rules
             .parse_proc("start", input2)
             .expect("Should be parsed")
@@ -100,10 +89,10 @@ fn aab() {
 
     assert_eq!(
         Some(vec![
-            Token::from("a".to_owned()),
-            Token::from("a".to_owned()),
-            Token::from("a".to_owned()),
-            Token::from("b".to_owned())
+            Token::from("a"),
+            Token::from("a"),
+            Token::from("a"),
+            Token::from("b")
         ]),
         rules
             .parse_proc("start", input3)
@@ -121,8 +110,8 @@ fn aab() {
     assert_eq!(
         Some(
             (0..times)
-                .map(|_| Token::from("a".to_owned()))
-                .chain([Token::from("b".to_owned())])
+                .map(|_| Token::from("a"))
+                .chain([Token::from("b")])
                 .collect::<Vec<Token>>()
         ),
         rules
@@ -131,6 +120,38 @@ fn aab() {
             .downcast_ref()
             .cloned()
     );
+}
+
+#[test]
+fn abc() {
+    #[derive(Clone, Debug, PartialEq)]
+    enum Abc {
+        Ab,
+        Ac(Box<Abc>),
+    }
+
+    let rules = rules! {
+        start {
+            (abc)
+        }
+
+        abc {
+            ("a" "b") => |_| Abc::Ab.into_value();
+            ("a" abc "c") => |v| Abc::Ac(Box::new(v[1].downcast_ref::<Abc>().unwrap().clone())).into_value();
+        }
+    };
+
+    let input = "aaabcc";
+    let expected_result = Abc::Ac(Box::new(Abc::Ac(Box::new(Abc::Ab))));
+
+    assert_eq!(
+        &expected_result,
+        rules
+            .parse_proc("start", input)
+            .expect("Should be parsed")
+            .downcast_ref()
+            .unwrap()
+    )
 }
 
 #[test]
@@ -183,36 +204,4 @@ fn char_literal() {
                 .unwrap()
         );
     }
-}
-
-#[test]
-fn abc() {
-    #[derive(Clone, Debug, PartialEq)]
-    enum Abc {
-        Ab,
-        Ac(Box<Abc>),
-    }
-
-    let rules = rules! {
-        start {
-            (abc)
-        }
-
-        abc {
-            ("a" "b") => |_| Abc::Ab.into_value();
-            ("a" abc "c") => |v| Abc::Ac(Box::new(v[1].downcast_ref::<Abc>().unwrap().clone())).into_value();
-        }
-    };
-
-    let input = "aaabcc";
-    let expected_result = Abc::Ac(Box::new(Abc::Ac(Box::new(Abc::Ab))));
-
-    assert_eq!(
-        &expected_result,
-        rules
-            .parse_proc("start", input)
-            .expect("Should be parsed")
-            .downcast_ref()
-            .unwrap()
-    )
 }

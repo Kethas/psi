@@ -52,6 +52,60 @@ fn left_recursion() {
 }
 
 #[test]
+fn ternary() {
+    #[derive(Clone, PartialEq, Debug)]
+    enum TernaryDigit {
+        Zero,
+        One,
+        Two,
+    }
+
+    let rules = rules! {
+        start {
+            (ternary)
+        }
+
+        ternary {
+            ("0") => |_| vec![TernaryDigit::Zero].into_value();
+            (ternary_inner)
+        }
+
+        ternary_inner {
+            (ternary_inner digit) => |v| {
+                let mut vec = v[0].downcast_ref::<Vec<TernaryDigit>>().unwrap().clone();
+                vec.push(v[1].downcast_ref::<TernaryDigit>().unwrap().clone());
+
+                vec.into_value()
+            };
+            (digit_nonzero) => |v| vec![v[0].downcast_ref::<TernaryDigit>().unwrap().clone()].into_value();
+        }
+
+
+        digit_nonzero {
+            ("1") => |_| TernaryDigit::One.into_value();
+            ("2") => |_| TernaryDigit::Two.into_value();
+        }
+
+        digit {
+            ("0") => |_| TernaryDigit::Zero.into_value();
+            ("1") => |_| TernaryDigit::One.into_value();
+            ("2") => |_| TernaryDigit::Two.into_value();
+        }
+    };
+
+    let input = "120";
+    let expected_result = vec![TernaryDigit::One, TernaryDigit::Two, TernaryDigit::Zero];
+
+    assert_eq!(
+        Some(&expected_result),
+        rules
+            .parse_proc("start", input)
+            .expect("Should be parsed")
+            .downcast_ref::<Vec<TernaryDigit>>()
+    )
+}
+
+#[test]
 fn calculator() {
     init();
 
