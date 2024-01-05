@@ -1,7 +1,7 @@
 use super::input::Input;
 use std::{any::Any, rc::Rc};
 
-use derive_more::{Deref, DerefMut, Display, From};
+use derive_more::{Deref, DerefMut, Display};
 
 pub type ParseValue = Rc<dyn Any>;
 
@@ -15,12 +15,18 @@ impl<T: Any> IntoParseValue for T {
     }
 }
 
-#[derive(Clone, Debug, Display, Deref, DerefMut, From, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Display, Deref, DerefMut, Eq, PartialEq, Hash)]
 pub struct Token(String);
 
 impl AsRef<str> for Token {
     fn as_ref(&self) -> &str {
         self.0.as_ref()
+    }
+}
+
+impl<T: Into<String>> From<T> for Token {
+    fn from(value: T) -> Self {
+        Self(value.into())
     }
 }
 
