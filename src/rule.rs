@@ -497,6 +497,9 @@ struct ParseStackItem<'a, 'i> {
     rule_trees: &'a [RuleTree],
     n: usize,
     input: Input<'i>,
+
+    // primarily for debugging
+    prev_path: Vec<usize>,
 }
 
 impl<'a, 'i> Debug for ParseStackItem<'a, 'i> {
@@ -506,11 +509,12 @@ impl<'a, 'i> Debug for ParseStackItem<'a, 'i> {
             rule,
             n,
             input,
+            prev_path,
             ..
         } = self;
 
         f.write_fmt(format_args!(
-            "({depth}, \"{rule}\", [{n:?}], input = \"{input}\")"
+            "({depth}, \"{rule}\"{prev_path:?}, [{n:?}], input = \"{input}\")"
         ))
     }
 }
@@ -528,6 +532,7 @@ fn parse<'a>(
         rule,
         rule_trees,
         n: 0,
+        prev_path: vec![],
         input,
     }];
 
@@ -547,6 +552,7 @@ fn parse<'a>(
             rule,
             rule_trees,
             n,
+            prev_path,
             mut input,
         } = stack.pop().unwrap();
 
@@ -593,6 +599,74 @@ fn parse<'a>(
                             false
                         }
                     }
+                    RulePart::Not(literals) => {
+                        log::debug!("NOT: {literals:?}");
+
+                        let step = literals
+                            .iter()
+                            .map(|str| str.chars().count())
+                            .min()
+                            .unwrap();
+
+                        let start_input = input.clone();
+
+                        let mut success = true;
+
+                        'literals: for literal in literals {
+                            let mut literal_chars = literal.chars();
+
+                            let mut term_input = start_input.clone();
+
+                            loop {
+                                let mut i = term_input.clone();
+
+                                let (i_char, l_char) = (i.next(), literal_chars.next());
+                                match (i_char, l_char) {
+                                    (None, None) | (Some(_), None) => {
+                                        success = false;
+                                        break 'literals;
+                                    }
+                                    (None, Some(_)) => break,
+                                    (Some(c0), Some(c1)) if c0 == c1 => {}
+                                    (Some(_), Some(_)) => break,
+                                }
+
+                                term_input = i;
+                            }
+                        }
+
+                        if success {
+                            let mut token = String::new();
+
+                            let mut token_input = start_input.clone();
+
+                            for _ in 0..step {
+                                let pos = token_input.pos();
+                                let (row, col) = token_input.row_col();
+                                token.push(token_input.next().ok_or_else(|| {
+                                    ParseError::UnexpectedChar {
+                                        current_rule: rule.to_owned(),
+                                        char: None,
+                                        pos,
+                                        row,
+                                        col,
+                                    }
+                                })?);
+                            }
+
+                            let parse_value = Rc::new(Token::from(token));
+
+                            let buffer = buffers.last_mut().unwrap();
+                            buffer.push(parse_value);
+
+                            input = token_input;
+
+                            true
+                        } else {
+                            false
+                        }
+                    }
+
                     RulePart::NonTerm(rule_name) => {
                         log::debug!("NON_TERM: ({rule_name})");
                         // push this rule back on the stack
@@ -601,6 +675,7 @@ fn parse<'a>(
                             rule,
                             rule_trees,
                             n,
+                            prev_path: prev_path.clone(),
                             input: start_input,
                         });
 
@@ -618,6 +693,7 @@ fn parse<'a>(
                             rule_trees,
                             n: 0,
                             input: input.clone(),
+                            prev_path: vec![],
                         };
 
                         stack.push(new_stack_item);
@@ -629,11 +705,13 @@ fn parse<'a>(
                     RulePart::Recurse => {
                         todo!()
                     }
-                    RulePart::Not(_) => todo!(),
                 };
 
                 if success {
-                    log::debug!("TERM SUCCESS");
+                    log::debug!("TERM/NOT SUCCESS");
+
+                    let mut prev_path = prev_path;
+                    prev_path.push(n);
 
                     stack.push(ParseStackItem {
                         depth,
@@ -641,9 +719,10 @@ fn parse<'a>(
                         rule_trees: nexts,
                         n: 0,
                         input,
+                        prev_path
                     });
                 } else {
-                    log::debug!("TERM FAIL!");
+                    log::debug!("TERM/NOT FAIL!");
 
                     let mut n = n;
                     let mut rule_trees = rule_trees;
@@ -661,6 +740,7 @@ fn parse<'a>(
                                 rule_trees,
                                 n: n + 1,
                                 input,
+                                prev_path,
                             });
                             break 'fail;
                         } else {
@@ -676,6 +756,7 @@ fn parse<'a>(
                                     break 'depth;
                                 }
                             }
+                            buffers.pop();
 
                             log::debug!("INTERMEDIATE_STACK: {stack:#?}");
                             log::debug!("INTERMEDIATE_BUFFERS: {buffers:?}");
@@ -736,12 +817,16 @@ fn parse<'a>(
                         _ => unreachable!(),
                     };
 
+                    let mut prev_path = prev_path;
+                    prev_path.push(n);
+
                     stack.push(ParseStackItem {
                         depth: stack_top.depth,
                         rule: stack_top.rule,
                         rule_trees: nexts,
                         n: 0,
                         input,
+                        prev_path,
                     })
                 } else {
                     log::debug!("The very end!");

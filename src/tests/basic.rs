@@ -1,12 +1,4 @@
 use super::*;
-use std::io::Write;
-
-fn init() {
-    let _ = env_logger::builder()
-        .is_test(true)
-        .format(|buf, record| writeln!(buf, "{}", record.args()))
-        .try_init();
-}
 
 #[test]
 fn hello_world() {
@@ -142,144 +134,85 @@ fn aab() {
 }
 
 #[test]
-fn calculator() {
+fn char_literal() {
     init();
 
     let rules = rules! {
-        start {
-            (ws term ws) => |v| v[1].clone();
+        start { (char) }
+
+        char /* char */ {
+            ("'" char_inner "'") => |v| v[1].clone();
         }
 
-        ws {
-            ()
-            (ws " ")
-        }
-
-        expr {
-            (term)
-        }
-
-        term {
-            (factor)
-            (term ws "+" ws term) => |v| {
-                match (v[0].downcast_ref::<i32>(), v[4].downcast_ref::<i32>()) {
-                    (Some(a), Some(b)) => (a + b).into_value(),
-                    _ => unreachable!()
-                }
+        char_inner /* char */ {
+            (char_escape)
+            ((! "'")) => |v| {
+                v[0].downcast_ref::<Token>().unwrap().chars().next().unwrap().into_value()
             };
         }
 
-        factor {
-            (int)
-            ("(" ws expr ws ")") => |v| v[2].clone();
-            (factor ws "*" ws factor) => |v| {
-                match (v[0].downcast_ref::<i32>(), v[4].downcast_ref::<i32>()) {
-                    (Some(a), Some(b)) => (a * b).into_value(),
-                    _ => unreachable!()
-                }
-            };
+        char_escape /* char */ {
+            ("\\" "'") => |_| '\''.into_value();
+            ("\\" "n") => |_| '\n'.into_value();
+            ("\\" "r") => |_| '\r'.into_value();
+            ("\\" "t") => |_| '\t'.into_value();
+            ("\\" "\\") => |_| '\\'.into_value();
+            ("\\" "0") => |_| '\0'.into_value();
         }
 
-        digit_nonzero {
-            ("1")
-            ("2")
-            ("3")
-            ("4")
-            ("5")
-            ("6")
-            ("7")
-            ("8")
-            ("9")
-        }
-
-        int {
-            ("0") => |_| 0.into_value();
-            (_int) => |v| match v[0].downcast_ref::<String>() {
-                Some(s) => s.parse::<i32>().unwrap().into_value(),
-                _ => unreachable!(),
-            };
-        }
-
-        _int {
-            (digit_nonzero) => |v| match v[0].downcast_ref::<Token>() {
-                Some(digit) => digit.to_string().into_value(),
-                _ => unreachable!()
-            };
-
-            (_int digit_nonzero) => |v| match (v[0].downcast_ref::<String>(), v[1].downcast_ref::<Token>()) {
-                (Some(int), Some(digit)) => format!("{int}{digit}").into_value(),
-                _ => unreachable!()
-            };
-
-            (_int "0") => |v| match v[0].downcast_ref::<String>() {
-                Some(int) => format!("{int}0").into_value(),
-                _ => unreachable!()
-            };
-        }
     };
 
-    let input = "       12 * 5 + 16 * 2     ";
+    let inputs = [
+        ("'a'", 'a'),
+        ("' '", ' '),
+        ("'\\''", '\''),
+        ("'\\n'", '\n'),
+        ("'\\r'", '\r'),
+        ("'\\t'", '\t'),
+        ("'\\\\'", '\\'),
+        ("'\\0'", '\0'),
+    ];
 
-    let expected_result = 12 * 5 + 16 * 2;
-
-    let result = rules.parse_proc("start", input);
-
-    assert_eq!(
-        Some(expected_result),
-        result
-            .expect("Should be parsed")
-            .downcast_ref::<i32>()
-            .cloned()
-    )
+    for (input, expected_result) in inputs {
+        assert_eq!(
+            expected_result,
+            *rules
+                .parse_proc("start", input)
+                .expect("Should be parsed.")
+                .downcast_ref()
+                .unwrap()
+        );
+    }
 }
 
 #[test]
-fn left_recursion() {
-    init();
+fn abc() {
+    #[derive(Clone, Debug, PartialEq)]
+    enum Abc {
+        Ab,
+        Ac(Box<Abc>),
+    }
 
     let rules = rules! {
         start {
-            (expr)
+            (abc)
         }
 
-        expr {
-            ("x") => |_| "x".to_owned().into_value();
-            (expr "+" "x")
-            => |v| format!(
-                "{}+{}",
-                v[0].downcast_ref::<String>().unwrap(),
-                v[2].downcast_ref::<Token>().unwrap()
-            ).into_value();
+        abc {
+            ("a" "b") => |_| Abc::Ab.into_value();
+            ("a" abc "c") => |v| Abc::Ac(Box::new(v[1].downcast_ref::<Abc>().unwrap().clone())).into_value();
         }
     };
 
-    let input0 = "x";
+    let input = "aaabcc";
+    let expected_result = Abc::Ac(Box::new(Abc::Ac(Box::new(Abc::Ab))));
 
     assert_eq!(
-        Some(&String::from("x")),
+        &expected_result,
         rules
-            .parse_proc("start", input0)
+            .parse_proc("start", input)
             .expect("Should be parsed")
-            .downcast_ref(),
-    );
-
-    let input1 = "x+x";
-
-    assert_eq!(
-        Some(&String::from("x+x")),
-        rules
-            .parse_proc("start", input1)
-            .expect("Should be parsed")
-            .downcast_ref(),
-    );
-
-    let input2 = "x+x+x";
-
-    assert_eq!(
-        Some(&String::from("x+x+x")),
-        rules
-            .parse_proc("start", input2)
-            .expect("Should be parsed")
-            .downcast_ref(),
-    );
+            .downcast_ref()
+            .unwrap()
+    )
 }
