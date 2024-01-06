@@ -578,8 +578,14 @@ impl<'a, 'i> Debug for ParseStackItem<'a, 'i> {
             ..
         } = self;
 
+        let prev_path = if prev_path.is_empty() {
+            "".to_owned()
+        } else {
+            format!("{prev_path:?}")
+        };
+
         f.write_fmt(format_args!(
-            "({depth}, {rule}{prev_path:?}, [{n:?}], input = \"{input}\")"
+            "({depth}, {rule}{prev_path}, [{n:?}], input = \"{input}\")"
         ))
     }
 }
@@ -759,7 +765,26 @@ fn parse<'a>(
                     continue 'main;
                 }
 
-                RulePart::Recurse => todo!(),
+                RulePart::Recurse => {
+                    log::debug!("RECURSE");
+
+                    stack.push(ParseStackItem {
+                        depth: top.depth + 1,
+                        rule,
+                        rule_trees: rules.0.get(top.rule).ok_or_else(|| {
+                            ParseError::RuleNotFound {
+                                rule_name: top.rule.to_owned(),
+                            }
+                        })?,
+                        n: 1,
+                        input: top.input,
+                        prev_path: vec![],
+                    });
+
+                    buffers.push(Vec::new());
+
+                    continue 'main;
+                }
             },
             RuleTree::End { transformer } => {
                 log::debug!("END");
@@ -774,55 +799,8 @@ fn parse<'a>(
                     buffer.into_value()
                 };
 
-                if top.depth == 0 {
-                    // End on depth == 0, return value
-                    log::debug!("END ON DEPTH 0, FINISHED!");
-
-                    return Ok((parse_value, top.input));
-                } else {
-                    log::debug!("REMOVE DEPTH {}", top.depth);
-                    'depth: loop {
-                        if let Some(&ParseStackItem { depth: d, .. }) = stack.last() {
-                            if d == top.depth {
-                                stack.pop();
-                            } else {
-                                break 'depth;
-                            }
-                        } else {
-                            break 'depth;
-                        }
-                    }
-
-                    let mut new_top = stack.last().unwrap().clone();
-
-                    match &new_top.rule_trees[new_top.n] {
-                        RuleTree::Part {
-                            part: RulePart::NonTerm(_),
-                            nexts,
-                        } => {
-                            new_top.prev_path.push(new_top.n);
-                            new_top.n = 0;
-                            new_top.input = top.input;
-                            new_top.rule_trees = nexts;
-                            stack.push(new_top);
-
-                            let buffer = if buffers.is_empty() {
-                                buffers.push(vec![]);
-                                &mut buffers[0]
-                            } else {
-                                buffers.last_mut().unwrap()
-                            };
-
-                            buffer.push(parse_value);
-                        }
-
-                        RuleTree::Part { part, .. } => {
-                            log::debug!("NON NONTERM PART: {part:?}");
-                            unreachable!()
-                        }
-
-                        _ => unreachable!(),
-                    }
+                if let Some(res) = end(&mut stack, &mut buffers, parse_value, None) {
+                    return Ok(res);
                 }
 
                 continue 'main;
@@ -848,18 +826,21 @@ fn parse<'a>(
 
                 buffers.last_mut().unwrap().push(token.into_value());
             }
-            Err(error) => fail(rules, &mut stack, &mut buffers, error)?,
+            Err(error) => {
+                if let Some(result) = fail(&mut stack, &mut buffers, error)? {
+                    return Ok(result);
+                }
+            }
         }
     }
 }
 
 #[inline]
-fn fail(
-    rules: &Rules,
-    stack: &mut Vec<ParseStackItem>,
+fn fail<'a>(
+    stack: &mut Vec<ParseStackItem<'_, 'a>>,
     buffers: &mut Vec<Vec<ParseValue>>,
     error: ParseError,
-) -> Result<(), ParseError> {
+) -> Result<Option<(ParseValue, Input<'a>)>, ParseError> {
     //let errors = vec![error];
 
     // ab: ("a" "b")
@@ -871,6 +852,9 @@ fn fail(
     //
 
     log::debug!("ENTER FAIL");
+
+    let mut last_buffer: Option<Vec<ParseValue>> = None;
+    let mut last_input = None;
 
     'fail: loop {
         log::debug!("\n\n\n\n");
@@ -884,11 +868,30 @@ fn fail(
 
         let top = stack.last_mut().unwrap();
 
+        if let RuleTree::Part {
+            part: RulePart::Recurse,
+            ..
+        } = &top.rule_trees[top.n]
+        {
+            log::debug!("Reached Recurse on fail");
+            let parse_value = last_buffer.unwrap().first().unwrap().clone();
+
+            buffers.pop();
+
+            if let Some(res) = end(stack, buffers, parse_value, last_input) {
+                return Ok(Some(res));
+            }
+
+            break 'fail;
+        }
+
         log::debug!(
             "top.n = {}, top.rule_trees.len() = {}",
             top.n,
             top.rule_trees.len()
         );
+
+        last_input = Some(top.input.clone());
 
         if top.n + 1 < top.rule_trees.len() {
             top.n += 1;
@@ -898,9 +901,9 @@ fn fail(
 
             if let Some(top) = stack.last_mut() {
                 if top.depth == old_top.depth {
-                    buffers.last_mut().unwrap().pop();
+                    last_buffer = buffers.last_mut().unwrap().pop().map(|v| vec![v]);
                 } else {
-                    buffers.pop();
+                    last_buffer = buffers.pop();
                 }
             } else {
                 return Err(error);
@@ -912,5 +915,90 @@ fn fail(
         }
     }
 
-    Ok(())
+    Ok(None)
+}
+
+fn end<'a>(
+    stack: &mut Vec<ParseStackItem<'_, 'a>>,
+    buffers: &mut Vec<Vec<ParseValue>>,
+    parse_value: ParseValue,
+    override_input: Option<Input<'a>>,
+) -> Option<(ParseValue, Input<'a>)> {
+    let top = stack.last().unwrap().clone();
+
+    let input = override_input.unwrap_or_else(|| top.input.clone());
+
+    if top.depth == 0 {
+        // End on depth == 0, return value
+        log::debug!("END ON DEPTH 0, FINISHED!");
+
+        return Some((parse_value, input));
+    } else {
+        log::debug!("REMOVE DEPTH {}", top.depth);
+        'depth: loop {
+            if let Some(&ParseStackItem { depth: d, .. }) = stack.last() {
+                if d == top.depth {
+                    stack.pop();
+                } else {
+                    break 'depth;
+                }
+            } else {
+                break 'depth;
+            }
+        }
+
+        let mut new_top = stack.last().unwrap().clone();
+
+        match &new_top.rule_trees[new_top.n] {
+            RuleTree::Part {
+                part: RulePart::NonTerm(_),
+                nexts,
+            } => {
+                new_top.prev_path.push(new_top.n);
+                new_top.n = 0;
+                new_top.input = input;
+                new_top.rule_trees = nexts;
+                stack.push(new_top);
+
+                let buffer = if buffers.is_empty() {
+                    buffers.push(vec![]);
+                    &mut buffers[0]
+                } else {
+                    buffers.last_mut().unwrap()
+                };
+
+                buffer.push(parse_value);
+            }
+
+            RuleTree::Part {
+                part: RulePart::Recurse,
+                nexts,
+            } => {
+                new_top.depth += 1;
+                new_top.prev_path.push(new_top.n);
+                new_top.n = 0;
+                new_top.input = input;
+                new_top.rule_trees = nexts;
+                stack.push(new_top);
+
+                let buffer = if buffers.is_empty() {
+                    unreachable!();
+                } else {
+                    buffers.insert(buffers.len() - 1, Vec::new());
+                    buffers.last_mut().unwrap()
+                };
+
+                buffer.push(parse_value);
+            }
+
+            RuleTree::Part { part, .. } => {
+                log::debug!("NON NONTERM PART: {part:?}");
+                unreachable!()
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    None
 }
