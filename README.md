@@ -17,6 +17,8 @@ These constructs can be used to represent (hopefully) almost anything that can b
 
 ## Using this crate
 
+### Basic Usage
+
 The easiest way to make a Psi grammar is using the `rules!` macro.
 
 ```rust
@@ -45,12 +47,16 @@ let result = rules.parse_entire("start", "Hello, Jimmy!");
 ```
 
 Running the above code will yield a list of tokens (`["Hello, ", "Jimmy", "!"]`).
-It is returned as a `ParseValue`, which is an `Rc<dyn Any>`.
-In order to extract the values you want, you can use `.downcast_ref::<Vec<ParseValue>()` (or any type you wish to match on). In this case, each item in the `Vec<ParseValue>` can be downcast into a `psi_parser::Token`, which represents a matched terminal.
+It is returned as a `ParseValue`, which is an `Box<dyn Any>`.
+In order to extract the values you want, you can use `.downcast::<Vec<ParseValue>()` (or any type you wish to match on). In this case, each item in the `Vec<ParseValue>` can be downcast into a `psi_parser::Token`, which represents a matched terminal.
+
+### Transformer Actions
 
 In order to make the parse output more useful, transformer actions can be attributed to each rule definition using `=>`.
-These transformer actions are expressions of the type `Fn(&Vec<ParseValue>) -> ParseValue`.
-Currently, the best way to use these actions is to match on indices using `downcast_ref` (as above) and clone when needed.
+These transformer actions are expressions of the type `Fn(ParseBuffer) -> ParseValue`,
+where a `ParseBuffer` is a function that when called with an index, will give you the ParseValue at that index (but only once!). Each rule part corresponds to one item in the buffer.
+
+Currently, the best way to use these actions is to match on indices using `downcast` (as above).
 
 You can return anything as a `ParseValue`, as long as it has a `'static` lifetime, by using `.into_value()`, as seen below.
 
@@ -65,28 +71,18 @@ let rules = rules!{
     }
 
     list {
-        ("[" list_inner "]") => |v| v[1].clone().into_value();
+        ("[" list_inner "]") => |v| v(1);
         // Empty list
         ("[]") => |_| (Vec::<Token>::new()).into_value();
     }
 
     list_inner {
-        (name) => |v| {
-            match v[0].downcast_ref::<Token>() {
-                Some(token) => vec![token.clone()].into_value(),
-                _ => unreachable!()
-            }
+        (name) => |v| vec![*v(0).downcast::<Token>().unwrap()].into_value();
 
-        };
-
-        (list_inner "," name) => |v| match (v[0].downcast_ref::<Vec<Token>>(), v[2].downcast_ref::<Token>()) {
-            (Some(list), Some(name)) => {
-                let mut vec = list.clone();
-                vec.extend(name.clone());
-                vec.into_value()
-            }
-
-            _ => unreachable!()
+        (list_inner "," name) => |v| {
+            let mut vec = v(0).downcast::<Vec<Token>>().unwrap()
+            vec.push(*v(2).downcast::<Token>().unwrap());
+            vec
         };
     }
 
@@ -102,14 +98,13 @@ let rules = rules!{
 
 Using the above code to parse "[John,John,Josh,Jimmy,Jane,Jeremiah]" will yield a `ParseValue` that can be downcast to a `Vec` of `psi_parser::Token` of the names.
 
-The default functionality when a transformer isn't specified is to return the `Vec<ParseValue>` as a `ParseValue`, or return the single value inside the `Vec` if it only has one value.
+The default functionality when a transformer isn't specified is to return a `Vec<ParseValue>` as a `ParseValue`, or return the single value inside the buffer if it only has one.
 
 You can additionally use a any type as a `ParseValue` as long as its lifetime is `'static`.
 
 ```rust
 use psi_parser::prelude::*;
 
-#[derive(Clone)]
 enum Name {
     John,
     Jane,
@@ -133,10 +128,130 @@ let rules = rules! {
 };
 ```
 
+### Imports
+
+Psi grammars can be composed using `#[import (expr) as name]`
+Any expression that implements `Into<psi_parser::Rules>` can be used.
+
+See [Included Parsers](#included-parsers) for the `declare_rules!` macro which can be used to declare rules that can be easily imported.
+
+```rust
+use psi_parser::prelude::*;
+
+let names_rules = rules! {
+    name {
+        ("John")
+        ("Jane")
+        ("Jeremiah")
+        ("Josh")
+        ("Jimmy")
+    }
+};
+
+let rules = rules! {
+    #[import (names_rules) as names]
+
+    start {
+        // Note that accessing a namespace requires another set of parentheses
+        ("Hello, " (names::name) "!")
+    }
+};
+```
+
+You can also import without specifying `as <namespace>`, though it will merge the existing rules with the imported ones if any have the same name.
+It is recommended to always import with a namespace.
+
+### `Not`
+
+Another type of rule part is the `Not` rule part.
+It matches only when the next characters of the input do **not** match any of its literals.
+It then returns a token the size (in characters) of the smallest literal.
+
+```rust
+use psi_parser::prelude::*;
+
+let rules = rules! {
+    character {
+        ("'" char_inner "'") => |v| v(1)
+    }
+
+    char_inner {
+        (char_escapes)
+        ((! "'"))
+    }
+};
+```
+
+Note that adjacent `Not`s are merged. Therefore the following will be merged:
+
+```rust
+rule {
+    ("a" (! "a"))
+    ("a" (! "bcde"))
+}
+```
+
+Into
+
+```rust
+rule {
+    ("a" (! "a" "bcde"))
+}
+```
+
+While the following will be left unchanged
+
+```rust
+rule {
+    ("a" (! "a"))
+    ("b" (! "bcde"))
+}
+```
+
+### Included Parsers
+
+A small set of parsers is included and can be found in the `src/rules` directory.
+Each one is a unit `struct` which implements `Into<Rules>` (so it can be imported easily) as well as having the `parse` and `parse_entire` functions defined for it directly.
+
+These can be defined using the `psi_parser::declare_rules!` macro:
+
+```rust
+use psi_parser::prelude::*;
+
+pub enum Name {
+    John,
+    Jane,
+    Jeremiah,
+    Josh,
+    Jimmy
+}
+
+declare_rules! {
+    pub Names {
+        name {
+            ("John") => |_| Name::John.into_value();
+            ("Jane") => |_| Name::Jane.into_value();
+            ("Jeremiah") => |_| Name::Jeremiah.into_value();
+            ("Josh") => |_| Name::Josh.into_value();
+            ("Jimmy") => |_| Name::Jimmy.into_value();
+        }
+    }
+}
+
+
+// Can be imported!
+let rules = rules! {
+    #[import (Names) as names]
+
+    start{ ((names::name)) }
+};
+```
+
+If you need to reuse a single parser, it is better to use `Rules::from(<rules>)` to build a local `Rules` instead of using the `parse` or `parse_entire` functions generated by `declare_rules!`, which rebuild the rules each time.
+
 ## Known issues
 
-- The current parsing implementation is recursive using function calls. This could be optimized to use loops instead.
-- Errors (`ParseError`) are not very straightforward.
+- Errors (`ParseError`) are not very straightforward - And since the procedural implementation are even less helpful.
 
 ## Examples
 
