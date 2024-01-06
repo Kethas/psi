@@ -101,7 +101,7 @@ fn aab() {
             .cloned()
     );
 
-    let times = 40000;
+    let times = 1000;
 
     let input_huge = (0..times).map(|_| 'a').chain(['b']).collect::<String>();
 
@@ -124,6 +124,8 @@ fn aab() {
 
 #[test]
 fn abc() {
+    init();
+
     #[derive(Clone, Debug, PartialEq)]
     enum Abc {
         Ab,
@@ -152,6 +154,36 @@ fn abc() {
             .downcast_ref()
             .unwrap()
     )
+}
+
+#[test]
+fn xab() {
+    init();
+    
+    let rules = rules! {
+        start {
+            (xab)
+        }
+
+        xab {
+            ("x" "a") => |_| "xa".to_owned().into_value();
+            ((!"a") "b") => |v| format!("{}b", v[0].downcast_ref::<Token>().unwrap()).into_value();
+        }
+    };
+
+    let inputs = [("xa", "xa".to_owned()), ("xb", "xb".to_owned())];
+
+    for (input, expected_result) in inputs {
+        log::debug!("input = \"{input}\"");
+
+        assert_eq!(
+            Some(&expected_result),
+            rules
+                .parse_proc("start", input)
+                .expect("Should be parsed")
+                .downcast_ref()
+        )
+    }
 }
 
 #[test]

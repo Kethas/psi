@@ -579,11 +579,12 @@ impl<'a, 'i> Debug for ParseStackItem<'a, 'i> {
         } = self;
 
         f.write_fmt(format_args!(
-            "({depth}, \"{rule}\"{prev_path:?}, [{n:?}], input = \"{input}\")"
+            "({depth}, {rule}{prev_path:?}, [{n:?}], input = \"{input}\")"
         ))
     }
 }
 
+#[inline]
 fn parse<'a>(
     rules: &Rules,
     rule: &str,
@@ -603,304 +604,313 @@ fn parse<'a>(
 
     let mut buffers: Vec<Vec<ParseValue>> = vec![vec![]];
 
-    loop {
-        if stack.is_empty() {
-            break;
-        }
+    'main: loop {
+        let top = stack.last().unwrap().clone();
 
         log::debug!("\n\n\n\n");
         log::debug!("STACK: {stack:#?}");
         log::debug!("BUFFERS: {buffers:?}");
 
-        let ParseStackItem {
-            depth,
-            rule,
-            rule_trees,
-            n,
-            prev_path,
-            mut input,
-        } = stack.pop().unwrap();
+        let rule_tree = &top.rule_trees[top.n];
 
-        let rule_tree = &rule_trees[n];
+        let token = match rule_tree {
+            RuleTree::Part { part, nexts } => match part {
+                RulePart::Term(literal) => {
+                    log::debug!("LEX \"{literal}\"");
 
-        match rule_tree {
-            RuleTree::Part { part, nexts } => {
-                // parse...
-                let start_input = input.clone();
+                    let mut literal_chars = literal.chars();
 
-                let success = match part {
-                    RulePart::Term(literal) => {
-                        log::debug!("TERM: \"{literal}\"");
+                    let mut term_input = top.input.clone();
 
+                    let success = loop {
+                        let mut i = term_input.clone();
+
+                        let pos = i.pos();
+                        let (row, col) = i.row_col();
+
+                        let (i_char, l_char) = (i.next(), literal_chars.next());
+                        match (i_char, l_char) {
+                            (None, None) => break Ok(()),
+                            (None, Some(_)) => {
+                                break Err(ParseError::UnexpectedChar {
+                                    current_rule: top.rule.to_owned(),
+                                    char: None,
+                                    pos,
+                                    row,
+                                    col,
+                                })
+                            }
+                            (Some(_), None) => break Ok(()),
+                            (Some(c0), Some(c1)) if c0 == c1 => {}
+                            (Some(c), Some(_)) => {
+                                break Err(ParseError::UnexpectedChar {
+                                    current_rule: top.rule.to_owned(),
+                                    char: Some(c),
+                                    pos,
+                                    row,
+                                    col,
+                                })
+                            }
+                        }
+
+                        term_input = i;
+                    };
+
+                    success.map(|_| (Token::from(literal), term_input, nexts))
+                }
+                RulePart::Not(literals) => {
+                    log::debug!(
+                        "LEX {:?}",
+                        literals
+                            .iter()
+                            .map(|s| format!("\"{s}\""))
+                            .collect::<Vec<_>>()
+                    );
+
+                    let mut success = Ok(());
+
+                    'literals: for literal in literals {
                         let mut literal_chars = literal.chars();
+                        let mut term_input = top.input.clone();
 
-                        let mut term_input = input.clone();
-
-                        let success = loop {
+                        loop {
                             let mut i = term_input.clone();
+
+                            let pos = i.pos();
+                            let (row, col) = i.row_col();
 
                             let (i_char, l_char) = (i.next(), literal_chars.next());
                             match (i_char, l_char) {
-                                (None, None) => break true,
-                                (None, Some(_)) => break false,
-                                (Some(_), None) => break true,
-                                (Some(c0), Some(c1)) if c0 == c1 => {}
-                                (Some(_), Some(_)) => break false,
-                            }
-
-                            term_input = i;
-                        };
-
-                        if success {
-                            let parse_value = Rc::new(Token::from(literal.clone()));
-
-                            let buffer = buffers.last_mut().unwrap();
-                            buffer.push(parse_value);
-
-                            input = term_input;
-
-                            true
-                        } else {
-                            false
-                        }
-                    }
-                    RulePart::Not(literals) => {
-                        log::debug!("NOT: {literals:?}");
-
-                        let step = literals
-                            .iter()
-                            .map(|str| str.chars().count())
-                            .min()
-                            .unwrap();
-
-                        let start_input = input.clone();
-
-                        let mut success = true;
-
-                        'literals: for literal in literals {
-                            let mut literal_chars = literal.chars();
-
-                            let mut term_input = start_input.clone();
-
-                            loop {
-                                let mut i = term_input.clone();
-
-                                let (i_char, l_char) = (i.next(), literal_chars.next());
-                                match (i_char, l_char) {
-                                    (None, None) | (Some(_), None) => {
-                                        success = false;
-                                        break 'literals;
-                                    }
-                                    (None, Some(_)) => break,
-                                    (Some(c0), Some(c1)) if c0 == c1 => {}
-                                    (Some(_), Some(_)) => break,
-                                }
-
-                                term_input = i;
-                            }
-                        }
-
-                        if success {
-                            let mut token = String::new();
-
-                            let mut token_input = start_input.clone();
-
-                            for _ in 0..step {
-                                let pos = token_input.pos();
-                                let (row, col) = token_input.row_col();
-                                token.push(token_input.next().ok_or_else(|| {
-                                    ParseError::UnexpectedChar {
-                                        current_rule: rule.to_owned(),
-                                        char: None,
+                                (None, None) => {
+                                    success = Err(ParseError::UnexpectedToken {
+                                        current_rule: top.rule.to_owned(),
+                                        token: literal.clone(),
                                         pos,
                                         row,
                                         col,
-                                    }
-                                })?);
-                            }
-
-                            let parse_value = Rc::new(Token::from(token));
-
-                            let buffer = buffers.last_mut().unwrap();
-                            buffer.push(parse_value);
-
-                            input = token_input;
-
-                            true
-                        } else {
-                            false
-                        }
-                    }
-
-                    RulePart::NonTerm(rule_name) => {
-                        log::debug!("NON_TERM: ({rule_name})");
-                        // push this rule back on the stack
-                        stack.push(ParseStackItem {
-                            depth,
-                            rule,
-                            rule_trees,
-                            n,
-                            prev_path: prev_path.clone(),
-                            input: start_input,
-                        });
-
-                        let rule_trees =
-                            rules
-                                .0
-                                .get(rule_name)
-                                .ok_or_else(|| ParseError::RuleNotFound {
-                                    rule_name: rule_name.clone(),
-                                })?;
-
-                        let new_stack_item = ParseStackItem {
-                            depth: depth + 1,
-                            rule: rule_name,
-                            rule_trees,
-                            n: 0,
-                            input: input.clone(),
-                            prev_path: vec![],
-                        };
-
-                        stack.push(new_stack_item);
-
-                        buffers.push(vec![]);
-
-                        continue;
-                    }
-                    RulePart::Recurse => {
-                        todo!()
-                    }
-                };
-
-                if success {
-                    log::debug!("TERM/NOT SUCCESS");
-
-                    let mut prev_path = prev_path;
-                    prev_path.push(n);
-
-                    stack.push(ParseStackItem {
-                        depth,
-                        rule,
-                        rule_trees: nexts,
-                        n: 0,
-                        input,
-                        prev_path,
-                    });
-                } else {
-                    log::debug!("TERM/NOT FAIL!");
-
-                    let mut n = n;
-                    let mut rule_trees = rule_trees;
-                    let mut depth = depth;
-                    let mut input = start_input.clone();
-
-                    'fail: loop {
-                        log::debug!("(fail loop start)");
-                        if n + 1 < rule_trees.len() {
-                            // increment path
-
-                            stack.push(ParseStackItem {
-                                depth,
-                                rule,
-                                rule_trees,
-                                n: n + 1,
-                                input,
-                                prev_path,
-                            });
-                            break 'fail;
-                        } else {
-                            log::debug!("REMOVING DEPTH {depth}");
-                            'depth: loop {
-                                if let Some(&ParseStackItem { depth: d, .. }) = stack.last() {
-                                    if d == depth {
-                                        stack.pop();
-                                    } else {
-                                        break 'depth;
-                                    }
-                                } else {
-                                    break 'depth;
+                                    });
+                                    break 'literals;
+                                }
+                                (None, Some(_)) => {
+                                    break;
+                                }
+                                (Some(_), None) => {
+                                    success = Err(ParseError::UnexpectedToken {
+                                        current_rule: top.rule.to_owned(),
+                                        token: literal.clone(),
+                                        pos,
+                                        row,
+                                        col,
+                                    });
+                                    break 'literals;
+                                }
+                                (Some(c0), Some(c1)) if c0 == c1 => {}
+                                (Some(_), Some(_)) => {
+                                    break;
                                 }
                             }
-                            buffers.pop();
 
-                            log::debug!("INTERMEDIATE_STACK: {stack:#?}");
-                            log::debug!("INTERMEDIATE_BUFFERS: {buffers:?}");
-
-                            if let Some(top) = stack.last().cloned() {
-                                n = top.n;
-                                rule_trees = top.rule_trees;
-                                depth = top.depth;
-                                input = top.input;
-                            } else {
-                                return Err(ParseError::MultipleErrors {
-                                    current_rule: "?".to_owned(),
-                                    errors: vec![],
-                                });
-                            }
+                            term_input = i;
                         }
                     }
-                }
-            }
-            RuleTree::End { transformer } => {
-                log::debug!("Reached end!");
 
-                'depth: loop {
-                    if let Some(&ParseStackItem { depth: d, .. }) = stack.last() {
-                        if d == depth {
-                            stack.pop();
+                    let step_size = literals.iter().map(|s| s.chars().count()).min().unwrap();
+
+                    let mut input = top.input.clone();
+                    let mut token = String::new();
+
+                    for _ in 0..step_size {
+                        let pos = input.pos();
+                        let (row, col) = input.row_col();
+
+                        if let Some(ch) = input.next() {
+                            token.push(ch);
                         } else {
-                            break 'depth;
+                            success = Err(ParseError::UnexpectedChar {
+                                current_rule: top.rule.to_owned(),
+                                char: None,
+                                pos,
+                                row,
+                                col,
+                            });
+                            break;
                         }
-                    } else {
-                        break 'depth;
                     }
+
+                    success.map(|_| (Token::from(token), input, nexts))
                 }
 
-                let buffer = buffers.pop().unwrap();
+                RulePart::NonTerm(rule) => {
+                    log::debug!("PUSH RULE {rule} ONTO STACK");
+
+                    stack.push(ParseStackItem {
+                        depth: top.depth + 1,
+                        rule,
+                        rule_trees: rules.0.get(rule).ok_or_else(|| ParseError::RuleNotFound {
+                            rule_name: rule.clone(),
+                        })?,
+                        n: 0,
+                        input: top.input,
+                        prev_path: vec![],
+                    });
+
+                    buffers.push(Vec::new());
+
+                    continue 'main;
+                }
+
+                RulePart::Recurse => todo!(),
+            },
+            RuleTree::End { transformer } => {
+                log::debug!("END");
+
+                let mut buffer = buffers.pop().unwrap();
 
                 let parse_value = if let Some(transformer) = transformer {
                     transformer(&buffer)
                 } else if buffer.len() == 1 {
-                    buffer[0].clone()
+                    buffer.remove(0)
                 } else {
-                    Rc::new(buffer)
+                    buffer.into_value()
                 };
 
-                if let Some(buffer) = buffers.last_mut() {
-                    buffer.push(parse_value.clone());
-                } else {
-                    buffers.push(vec![parse_value.clone()]);
-                }
+                if top.depth == 0 {
+                    // End on depth == 0, return value
+                    log::debug!("END ON DEPTH 0, FINISHED!");
 
-                if let Some(stack_top) = stack.last().cloned() {
-                    let nexts = match &stack_top.rule_trees[stack_top.n] {
+                    return Ok((parse_value, top.input));
+                } else {
+                    log::debug!("REMOVE DEPTH {}", top.depth);
+                    'depth: loop {
+                        if let Some(&ParseStackItem { depth: d, .. }) = stack.last() {
+                            if d == top.depth {
+                                stack.pop();
+                            } else {
+                                break 'depth;
+                            }
+                        } else {
+                            break 'depth;
+                        }
+                    }
+
+                    let mut new_top = stack.last().unwrap().clone();
+
+                    match &new_top.rule_trees[new_top.n] {
                         RuleTree::Part {
                             part: RulePart::NonTerm(_),
                             nexts,
-                        } => nexts,
+                        } => {
+                            new_top.prev_path.push(new_top.n);
+                            new_top.n = 0;
+                            new_top.input = top.input;
+                            new_top.rule_trees = nexts;
+                            stack.push(new_top);
+
+                            let buffer = if buffers.is_empty() {
+                                buffers.push(vec![]);
+                                &mut buffers[0]
+                            } else {
+                                buffers.last_mut().unwrap()
+                            };
+
+                            buffer.push(parse_value);
+                        }
+
+                        RuleTree::Part { part, .. } => {
+                            log::debug!("NON NONTERM PART: {part:?}");
+                            unreachable!()
+                        }
 
                         _ => unreachable!(),
-                    };
-
-                    let mut prev_path = prev_path;
-                    prev_path.push(n);
-
-                    stack.push(ParseStackItem {
-                        depth: stack_top.depth,
-                        rule: stack_top.rule,
-                        rule_trees: nexts,
-                        n: 0,
-                        input,
-                        prev_path,
-                    })
-                } else {
-                    log::debug!("The very end!");
-                    // the very end!
-                    return Ok((parse_value, input));
+                    }
                 }
+
+                continue 'main;
+            }
+        };
+
+        match token {
+            Ok((token, input, nexts)) => {
+                log::debug!("LEX SUCCESS, PUSH NEXT ONTO STACK");
+
+                let mut prev_path = top.prev_path;
+
+                prev_path.push(top.n);
+
+                stack.push(ParseStackItem {
+                    depth: top.depth,
+                    rule: top.rule,
+                    rule_trees: nexts,
+                    n: 0,
+                    input,
+                    prev_path,
+                });
+
+                buffers.last_mut().unwrap().push(token.into_value());
+            }
+            Err(error) => fail(rules, &mut stack, &mut buffers, error)?,
+        }
+    }
+}
+
+#[inline]
+fn fail(
+    rules: &Rules,
+    stack: &mut Vec<ParseStackItem>,
+    buffers: &mut Vec<Vec<ParseValue>>,
+    error: ParseError,
+) -> Result<(), ParseError> {
+    //let errors = vec![error];
+
+    // ab: ("a" "b")
+    // "ac"
+    // [0, ab, 0, "ab"]      [[]]
+    // [0, ab[0], 0, "b"]    [["a"]]
+    // inc n, can't inc, delete top, delete last item in last buffer
+    // inc n, can't inc, delete top, delete last item in last buffer
+    //
+
+    log::debug!("ENTER FAIL");
+
+    'fail: loop {
+        log::debug!("\n\n\n\n");
+        log::debug!("FAIL LOOP START");
+        log::debug!("STACK: {stack:#?}");
+        log::debug!("BUFFERS: {buffers:?}");
+
+        // if stack.is_empty() {
+        //     return Err(error)
+        // }
+
+        let top = stack.last_mut().unwrap();
+
+        log::debug!(
+            "top.n = {}, top.rule_trees.len() = {}",
+            top.n,
+            top.rule_trees.len()
+        );
+
+        if top.n + 1 < top.rule_trees.len() {
+            top.n += 1;
+            break 'fail;
+        } else {
+            let old_top = stack.pop().unwrap();
+
+            if let Some(top) = stack.last_mut() {
+                if top.depth == old_top.depth {
+                    buffers.last_mut().unwrap().pop();
+                } else {
+                    buffers.pop();
+                }
+            } else {
+                return Err(error);
+                // return Err(ParseError::MultipleErrors {
+                //     current_rule: old_top.rule.to_owned(),
+                //     errors,
+                // });
             }
         }
     }
 
-    unreachable!()
+    Ok(())
 }
