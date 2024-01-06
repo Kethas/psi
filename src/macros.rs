@@ -2,20 +2,20 @@
 #[macro_export]
 macro_rules! rule_part {
     ($lit:literal) => {
-        psi_parser::rule::RulePart::Term(String::from($lit))
+        $crate::rule::RulePart::Term(String::from($lit))
     };
 
     ($rule:ident) => {
-        psi_parser::rule::RulePart::NonTerm(stringify!($rule).to_owned())
+        $crate::rule::RulePart::NonTerm(stringify!($rule).to_owned())
     };
 
     (($rule:path)) => {{
-        
-        psi_parser::rule::RulePart::NonTerm(stringify!($rule).to_owned())
+
+        $crate::rule::RulePart::NonTerm(stringify!($rule).to_owned())
     }};
 
     ((! $($lit:literal)*)) => {
-        psi_parser::rule::RulePart::Not([$(String::from($lit)),*].into_iter().collect())
+        $crate::rule::RulePart::Not([$(String::from($lit)),*].into_iter().collect())
     }
 
 
@@ -27,15 +27,15 @@ macro_rules! rule {
     ($name:ident: ($($tt:tt)*) $(=> $transformer:expr)?) => {{
 
         #[allow(unused_variables)]
-        let transformer: Option<psi_parser::rule::Transformer> = None;
+        let transformer: Option<$crate::rule::Transformer> = None;
 
         $(
-            let transformer: Option<psi_parser::rule::Transformer> = Some(Box::new($transformer));
+            let transformer: Option<$crate::rule::Transformer> = Some(std::rc::Rc::new($transformer));
         )?
 
         Rule {
             name: stringify!($name).to_owned(),
-            parts: vec![$(psi_parser::rule_part!($tt)),*],
+            parts: vec![$($crate::rule_part!($tt)),*],
             transformer
         }
     }};
@@ -61,7 +61,7 @@ macro_rules! rules {
             rules.push(rule!($rule_name: ($($tt)*) $(=> $transformer)?).into());
         )*)*
 
-        let rules = Rules::new(rules);
+        let rules = $crate::rule::Rules::new(rules);
 
         $(
             let mut rules = rules;
@@ -71,4 +71,38 @@ macro_rules! rules {
 
         rules
     }};
+}
+
+#[macro_export]
+macro_rules! declare_rules {
+    ($visibility:vis $name:ident { $($tt:tt)* }) => {
+        $visibility struct $name;
+
+        impl From<$name> for Rules {
+            fn from(_: $name) -> Self {
+                rules! {
+                    $($tt)*
+                }
+            }
+        }
+
+        impl $name {
+            pub fn parse<'a>(
+                &self,
+                start_rule: &str,
+                input: impl Into<$crate::input::Input<'a>>,
+            ) -> Result<$crate::result::ParseValue, $crate::result::ParseError> {
+                Rules::from(Self).parse(start_rule, input)
+            }
+
+            pub fn parse_entire<'a>(
+                &self,
+                start_rule: &str,
+                input: impl Into<$crate::input::Input<'a>>,
+            ) -> Result<$crate::result::ParseValue, $crate::result::ParseError> {
+                Rules::from(Self).parse_entire(start_rule, input)
+            }
+        }
+
+    };
 }

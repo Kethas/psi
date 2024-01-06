@@ -1,4 +1,4 @@
-pub use crate::{self as psi_parser};
+use crate::{self as psi_parser};
 use psi_parser::prelude::*;
 use std::io::Write;
 
@@ -11,3 +11,5 @@ pub fn init() {
 mod basic;
 
 mod recurse;
+
+mod rules;
