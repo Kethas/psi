@@ -14,8 +14,8 @@ fn left_recursion() {
             (expr "+" "x")
             => |v| format!(
                 "{}+{}",
-                v[0].downcast_ref::<String>().unwrap(),
-                v[2].downcast_ref::<Token>().unwrap()
+                v(0).downcast::<String>().unwrap(),
+                v(2).downcast::<Token>().unwrap()
             ).into_value();
         }
     };
@@ -53,7 +53,7 @@ fn left_recursion() {
 
 #[test]
 fn ternary() {
-    #[derive(Clone, PartialEq, Debug)]
+    #[derive(PartialEq, Debug)]
     enum TernaryDigit {
         Zero,
         One,
@@ -70,23 +70,23 @@ fn ternary() {
             (ternary_inner)
         }
 
-        ternary_inner {
+        ternary_inner /* Vec<TernaryDigit> */ {
             (ternary_inner digit) => |v| {
-                let mut vec = v[0].downcast_ref::<Vec<TernaryDigit>>().unwrap().clone();
-                vec.push(v[1].downcast_ref::<TernaryDigit>().unwrap().clone());
+                let mut vec = v(0).downcast::<Vec<TernaryDigit>>().unwrap();
+                vec.push(*v(1).downcast::<TernaryDigit>().unwrap());
 
-                vec.into_value()
+                vec
             };
-            (digit_nonzero) => |v| vec![v[0].downcast_ref::<TernaryDigit>().unwrap().clone()].into_value();
+            (digit_nonzero) => |v| vec![*v(0).downcast::<TernaryDigit>().unwrap()].into_value();
         }
 
 
-        digit_nonzero {
+        digit_nonzero /* TernaryDigit */ {
             ("1") => |_| TernaryDigit::One.into_value();
             ("2") => |_| TernaryDigit::Two.into_value();
         }
 
-        digit {
+        digit /* TernaryDigit */ {
             ("0") => |_| TernaryDigit::Zero.into_value();
             ("1") => |_| TernaryDigit::One.into_value();
             ("2") => |_| TernaryDigit::Two.into_value();
@@ -111,7 +111,7 @@ fn calculator() {
 
     let rules = rules! {
         start {
-            (ws term ws) => |v| v[1].clone();
+            (ws term ws) => |v| v(1);
         }
 
         ws {
@@ -125,23 +125,15 @@ fn calculator() {
 
         term {
             (factor)
-            (term ws "+" ws term) => |v| {
-                match (v[0].downcast_ref::<i32>(), v[4].downcast_ref::<i32>()) {
-                    (Some(a), Some(b)) => (a + b).into_value(),
-                    _ => unreachable!()
-                }
-            };
+            (term ws "+" ws term)
+             => |v| (*v(0).downcast::<i32>().unwrap() + *v(4).downcast::<i32>().unwrap()).into_value();
         }
 
         factor {
             (int)
-            ("(" ws expr ws ")") => |v| v[2].clone();
-            (factor ws "*" ws factor) => |v| {
-                match (v[0].downcast_ref::<i32>(), v[4].downcast_ref::<i32>()) {
-                    (Some(a), Some(b)) => (a * b).into_value(),
-                    _ => unreachable!()
-                }
-            };
+            ("(" ws expr ws ")") => |v| v(2);
+            (factor ws "*" ws factor)
+                => |v| (*v(0).downcast::<i32>().unwrap() * *v(4).downcast::<i32>().unwrap()).into_value();
         }
 
         digit_nonzero {
@@ -158,27 +150,25 @@ fn calculator() {
 
         int {
             ("0") => |_| 0.into_value();
-            (_int) => |v| match v[0].downcast_ref::<String>() {
-                Some(s) => s.parse::<i32>().unwrap().into_value(),
-                _ => unreachable!(),
-            };
+            (_int)
+                => |v| v(0).downcast::<String>().unwrap().parse::<i32>().unwrap().into_value();
         }
 
         _int {
-            (digit_nonzero) => |v| match v[0].downcast_ref::<Token>() {
-                Some(digit) => digit.to_string().into_value(),
-                _ => unreachable!()
-            };
+            (digit_nonzero) => |v| v(0).downcast::<Token>().unwrap().to_string().into_value();
 
-            (_int digit_nonzero) => |v| match (v[0].downcast_ref::<String>(), v[1].downcast_ref::<Token>()) {
-                (Some(int), Some(digit)) => format!("{int}{digit}").into_value(),
-                _ => unreachable!()
-            };
+            (_int digit_nonzero)
+                => |v| format!(
+                    "{}{}",
+                    v(0).downcast::<String>().unwrap(),
+                    v(1).downcast::<Token>().unwrap()
+                ).into_value();
 
-            (_int "0") => |v| match v[0].downcast_ref::<String>() {
-                Some(int) => format!("{int}0").into_value(),
-                _ => unreachable!()
-            };
+            (_int "0")
+            => |v| format!(
+                "{}0",
+                v(0).downcast::<String>().unwrap(),
+            ).into_value();
         }
     };
 

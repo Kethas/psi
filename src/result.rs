@@ -1,9 +1,9 @@
 use super::input::Input;
-use std::{any::Any, rc::Rc};
+use std::any::Any;
 
 use derive_more::{Deref, DerefMut, Display};
 
-pub type ParseValue = Rc<dyn Any>;
+pub type ParseValue = Box<dyn Any>;
 
 pub trait IntoParseValue {
     fn into_value(self) -> ParseValue;
@@ -11,7 +11,7 @@ pub trait IntoParseValue {
 
 impl<T: Any> IntoParseValue for T {
     fn into_value(self) -> ParseValue {
-        Rc::new(self)
+        Box::new(self)
     }
 }
 

@@ -23,18 +23,11 @@ fn main() {
         }
 
         list_inner {
-            (name) => |v| match v[0].downcast_ref::<Name>() {
-                Some(name) => vec![name.clone()].into_value(),
-                _ => unreachable!()
-            };
-            (list_inner "," name) => |v| match (v[0].downcast_ref::<Vec<Name>>(), v[2].downcast_ref::<Name>()) {
-                (Some(list), Some(name)) => {
-                    let mut vec = list.clone();
-                    vec.push(name.clone());
-                    vec.into_value()
-                },
-
-                _ => unreachable!()
+            (name) => |v| vec![*v(0).downcast::<Name>().unwrap()].into_value();
+            (list_inner "," name) => |v| {
+                let mut v0 = v(0).downcast::<Vec<Name>>().unwrap();
+                v0.push(*v(2).downcast().unwrap());
+                v0
             };
         }
 

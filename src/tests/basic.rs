@@ -40,16 +40,23 @@ fn aab() {
         aab {
             ("b")
             ("a" aab) => |v| {
-                if let Some(mut list) = v[1].downcast_ref::<Vec<Token>>().cloned() {
-                    list.insert(0, v[0].clone().downcast_ref::<Token>().unwrap().clone());
+                let v0 = *v(0).downcast::<Token>().unwrap();
+                let v1 = v(1);
 
-                    list.into_value()
-                } else {
-                    v
-                        .iter()
-                        .map(|token| token.downcast_ref::<Token>().unwrap().clone())
-                        .collect::<Vec<Token>>()
-                        .into_value()
+                match v1.downcast::<Vec<Token>>() {
+                    // If v1 is a list, then add v0 to the start of it
+                    Ok(mut v1) => {
+                        v1.insert(0, v0);
+
+                        v1
+                    }
+
+                    // otherwise, v1 has to be a token
+                    Err(v1) => {
+                        let v1 = *v1.downcast::<Token>().unwrap();
+
+                        vec![v0, v1].into_value()
+                    }
                 }
             };
         }
@@ -126,7 +133,7 @@ fn aab() {
 fn abc() {
     init();
 
-    #[derive(Clone, Debug, PartialEq)]
+    #[derive(Debug, PartialEq)]
     enum Abc {
         Ab,
         Ac(Box<Abc>),
@@ -139,7 +146,7 @@ fn abc() {
 
         abc {
             ("a" "b") => |_| Abc::Ab.into_value();
-            ("a" abc "c") => |v| Abc::Ac(Box::new(v[1].downcast_ref::<Abc>().unwrap().clone())).into_value();
+            ("a" abc "c") => |v| Abc::Ac(v(1).downcast::<Abc>().unwrap()).into_value();
         }
     };
 
@@ -159,7 +166,7 @@ fn abc() {
 #[test]
 fn xab() {
     init();
-    
+
     let rules = rules! {
         start {
             (xab)
@@ -167,7 +174,7 @@ fn xab() {
 
         xab {
             ("x" "a") => |_| "xa".to_owned().into_value();
-            ((!"a") "b") => |v| format!("{}b", v[0].downcast_ref::<Token>().unwrap()).into_value();
+            ((!"a") "b") => |v| format!("{}b", v(0).downcast::<Token>().unwrap()).into_value();
         }
     };
 
@@ -194,13 +201,14 @@ fn char_literal() {
         start { (char) }
 
         char /* char */ {
-            ("'" char_inner "'") => |v| v[1].clone();
+            ("'" char_inner "'") => |v| v(1);
         }
 
         char_inner /* char */ {
             (char_escape)
             ((! "'")) => |v| {
-                v[0].downcast_ref::<Token>().unwrap().chars().next().unwrap().into_value()
+                // Take first character
+                v(0).downcast::<Token>().unwrap().chars().next().unwrap().into_value()
             };
         }
 
@@ -301,9 +309,9 @@ fn import2() {
         #[import (NamesRules) as names]
 
         greeting {
-            ("Hello " (names::name) "!") => |v| Greeting::Hello(v[1].downcast_ref::<String>().unwrap().clone()).into_value();
-            ("Hi " (names::name) "!") => |v| Greeting::Hi(v[1].downcast_ref::<String>().unwrap().clone()).into_value();
-            ("Greetings " (names::name) "!") => |v| Greeting::Greetings(v[1].downcast_ref::<String>().unwrap().clone()).into_value();
+            ("Hello " (names::name) "!") => |v| Greeting::Hello(*v(1).downcast::<String>().unwrap()).into_value();
+            ("Hi " (names::name) "!") => |v| Greeting::Hi(*v(1).downcast::<String>().unwrap()).into_value();
+            ("Greetings " (names::name) "!") => |v| Greeting::Greetings(*v(1).downcast::<String>().unwrap()).into_value();
         }
     };
 

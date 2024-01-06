@@ -5,7 +5,7 @@ use psi_parser::prelude::*;
 fn main() {
     let rules = rules! {
         start {
-            (ws term ws) => |v| v[1].clone();
+            (ws term ws) => |v| v(1);
         }
 
         ws {
@@ -20,35 +20,24 @@ fn main() {
         term {
             (factor)
             (term ws "+" ws factor) => |v| {
-                match (v[0].downcast_ref::<f32>(), v[4].downcast_ref::<f32>()) {
-                    (Some(a), Some(b)) => (a + b).into_value(),
-                    _ => unreachable!()
-                }
+                (*v(0).downcast::<f32>().unwrap() + *v(4).downcast::<f32>().unwrap()).into_value()
             };
             (term ws "-" ws factor) => |v| {
-                match (v[0].downcast_ref::<f32>(), v[4].downcast_ref::<f32>()) {
-                    (Some(a), Some(b)) => (a - b).into_value(),
-                    _ => unreachable!()
-                }
+                (*v(0).downcast::<f32>().unwrap() - *v(4).downcast::<f32>().unwrap()).into_value()
             };
         }
 
         factor {
             (float)
-            ("(" ws expr ws ")") => |v| v[2].clone();
+            ("(" ws expr ws ")") => |v| v(2);
             (factor ws "*" ws float) => |v| {
-                match (v[0].downcast_ref::<f32>(), v[4].downcast_ref::<f32>()) {
-                    (Some(a), Some(b)) => (a * b).into_value(),
-                    _ => unreachable!()
-                }
+                (*v(0).downcast::<f32>().unwrap() * *v(4).downcast::<f32>().unwrap()).into_value()
             };
             (factor ws "/" ws float) => |v| {
-                match (v[0].downcast_ref::<f32>(), v[4].downcast_ref::<f32>()) {
-                    (Some(a), Some(b)) => (a / b).into_value(),
-                    _ => unreachable!()
-                }
+                (*v(0).downcast::<f32>().unwrap() / *v(4).downcast::<f32>().unwrap()).into_value()
             };
         }
+
 
         digit_nonzero {
             ("1")
@@ -76,24 +65,21 @@ fn main() {
         }
 
         digits {
-            (digit) => |v| match v[0].downcast_ref::<Token>() {
-                Some(s) => s.to_string().into_value(),
-                _ => unreachable!()
-            };
-            (digits digit) => |v| match (v[0].downcast_ref::<String>(), v[1].downcast_ref::<Token>()) {
-                (Some(s0), Some(s1)) => format!("{s0}{s1}").into_value(),
-                _ => unreachable!()
-            };
+            (digit) => |v| v(0).downcast::<Token>().unwrap().to_string().into_value();
+            (digits digit)
+                => |v| format!(
+                    "{}{}",
+                    v(0).downcast::<String>().unwrap(),
+                    v(1).downcast::<Token>().unwrap()
+                ).into_value();
         }
 
         float {
-            (int) => |v| match v[0].downcast_ref::<String>() {
-                Some(s) => s.parse::<f32>().unwrap().into_value(),
-                _ => unreachable!()
-            };
-            (int "." digits) => |v| match (v[0].downcast_ref::<String>(), v[2].downcast_ref::<String>()) {
-                (Some(s0), Some(s1)) => format!("{s0}.{s1}").parse::<f32>().unwrap().into_value(),
-                _ => unreachable!()
+            (int) => |v| v(0).downcast::<String>().unwrap().parse::<f32>().unwrap().into_value();
+            (int "." digits) => |v| {
+                let str = format!("{}.{}", v(0).downcast::<String>().unwrap(), v(2).downcast::<String>().unwrap());
+
+                str.parse::<f32>().unwrap().into_value()
             };
         }
 
@@ -103,20 +89,20 @@ fn main() {
         }
 
         _int {
-            (digit_nonzero) => |v| match v[0].downcast_ref::<Token>() {
-                Some(digit) => digit.to_string().into_value(),
-                _ => unreachable!()
-            };
+            (digit_nonzero) => |v| v(0).downcast::<Token>().unwrap().to_string().into_value();
 
-            (_int digit_nonzero) => |v| match (v[0].downcast_ref::<String>(), v[1].downcast_ref::<Token>()) {
-                (Some(int), Some(digit)) => format!("{int}{digit}").into_value(),
-                _ => unreachable!()
-            };
+            (_int digit_nonzero)
+                => |v| format!(
+                    "{}{}",
+                    v(0).downcast::<String>().unwrap(),
+                    v(1).downcast::<Token>().unwrap()
+                ).into_value();
 
-            (_int "0") => |v| match v[0].downcast_ref::<String>() {
-                Some(int) => format!("{int}0").into_value(),
-                _ => unreachable!()
-            };
+            (_int "0")
+                => |v| format!(
+                    "{}0",
+                    v(0).downcast::<String>().unwrap(),
+                ).into_value();
         }
     };
 
