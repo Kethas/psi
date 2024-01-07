@@ -33,6 +33,15 @@ pub enum RuleTree {
 }
 
 impl RuleTree {
+    fn length(&self) -> usize {
+        match self {
+            RuleTree::Part { nexts, .. } => {
+                1 + nexts.iter().map(|tree| tree.length()).max().unwrap_or(0)
+            }
+            RuleTree::End { .. } => 1,
+        }
+    }
+
     fn add_namespace(self, namespace: &str) -> RuleTree {
         match self {
             RuleTree::Part { part, nexts } => {
@@ -259,16 +268,19 @@ impl Rules {
             (RuleTree::Part { .. }, RuleTree::End { .. }) => Ordering::Greater,
             (RuleTree::End { .. }, RuleTree::Part { .. }) => Ordering::Less,
             (RuleTree::Part { part: p0, .. }, RuleTree::Part { part: p1, .. }) => match (p0, p1) {
-                (RulePart::Recurse, RulePart::Recurse) => Ordering::Equal,
+                (RulePart::Recurse, RulePart::Recurse) => unreachable!(),
                 (RulePart::Recurse, _) => Ordering::Greater,
                 (_, RulePart::Recurse) => Ordering::Less,
                 (RulePart::Term(lit0), RulePart::Term(lit1)) => {
-                    lit0.chars().count().cmp(&lit1.chars().count())
+                    match lit0.chars().count().cmp(&lit1.chars().count()) {
+                        Ordering::Equal => b.length().cmp(&a.length()),
+                        ord => ord,
+                    }
                 }
                 (RulePart::Term(_), RulePart::NonTerm(_)) => Ordering::Greater,
                 (RulePart::Term(_), RulePart::Not(_)) => Ordering::Greater,
                 (RulePart::NonTerm(_), RulePart::Term(_)) => Ordering::Less,
-                (RulePart::NonTerm(_), RulePart::NonTerm(_)) => Ordering::Equal,
+                (RulePart::NonTerm(_), RulePart::NonTerm(_)) => b.length().cmp(&a.length()),
                 (RulePart::NonTerm(_), RulePart::Not(_)) => Ordering::Greater,
                 // Theoretically, all Nots in the same level are merged, so this is unreachable?
                 (RulePart::Not(_), RulePart::Not(_)) => unreachable!(),
