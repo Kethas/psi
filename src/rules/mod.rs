@@ -1,6 +1,9 @@
 use crate::{self as psi_parser};
 use psi_parser::prelude::*;
 
+mod whitespace;
+pub use whitespace::Whitespace;
+
 mod integer;
 pub use integer::Integer;
 
@@ -18,3 +21,9 @@ pub use string::StringRules;
 
 mod boolean;
 pub use boolean::Boolean;
+
+mod float;
+pub use float::Float;
+
+pub mod json;
+pub use json::JsonRules;

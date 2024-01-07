@@ -1,4 +1,32 @@
+use std::collections::HashMap;
+
 use super::*;
+
+#[test]
+fn whitespace() {
+    let inputs = ["", "     ", "  \t", "\t\t   ", "\t", "\t \t"];
+
+    let inputs_ml = [
+        "",
+        "\n",
+        "\r\n",
+        "\n\r",
+        "\t \n\n\n  \t  \r   ",
+        "\n\n\r\r\n\n\t                                    ",
+    ];
+
+    for input in inputs {
+        log::debug!("input = \"{input}\"");
+
+        assert!(rules::Whitespace.parse_entire("ws", input).is_ok());
+    }
+
+    for input in inputs_ml {
+        log::debug!("input = \"{input}\"");
+
+        assert!(rules::Whitespace.parse_entire("ws_ml", input).is_ok());
+    }
+}
 
 #[test]
 fn integer() {
@@ -138,6 +166,91 @@ fn boolean() {
                 .parse_entire("boolean", input)
                 .expect("Should be parsed")
                 .downcast_ref::<bool>()
+        )
+    }
+}
+
+#[test]
+fn float() {
+    init();
+
+    let inputs = [
+        ("0", 0.0),
+        ("200.300", 200.300),
+        ("0.000001", 0.000001),
+        ("00001.30000002", 00001.30000002),
+    ];
+
+    for (input, expected_result) in inputs {
+        log::debug!("input = \"{input}\"");
+
+        assert_eq!(
+            Some(&expected_result),
+            rules::Float
+                .parse_entire("float", input)
+                .expect("Should be parsed")
+                .downcast_ref::<f64>()
+        )
+    }
+}
+
+#[test]
+fn json() {
+    use rules::json::Json;
+
+    init();
+
+    let inputs = [(
+        r#"
+        {
+            "key": "value",
+            "0": 12323.222976,
+            "something\n": null,
+            "is_something": false,
+            "array": [
+                "one",
+                "two",
+                {
+                    "name": "untitled"
+                },
+                true
+            ]
+        }
+        "#,
+        Json::from(
+            [
+                ("key".to_owned(), Json::from("value".to_owned())),
+                ("0".to_owned(), Json::from(12323.222976)),
+                ("something\n".to_owned(), Json::Null),
+                ("is_something".to_owned(), Json::from(false)),
+                (
+                    "array".to_owned(),
+                    Json::from(vec![
+                        Json::from("one".to_owned()),
+                        Json::from("two".to_owned()),
+                        Json::from(
+                            [("name".to_owned(), Json::from("untitled".to_owned()))]
+                                .into_iter()
+                                .collect::<HashMap<String, Json>>(),
+                        ),
+                        Json::from(true),
+                    ]),
+                ),
+            ]
+            .into_iter()
+            .collect::<HashMap<String, Json>>(),
+        ),
+    )];
+
+    for (input, expected_result) in inputs {
+        log::debug!("input = \"{input}\"");
+
+        assert_eq!(
+            Some(&expected_result),
+            rules::JsonRules
+                .parse_entire("start", input)
+                .expect("Should be parsed")
+                .downcast_ref::<Json>()
         )
     }
 }
