@@ -58,7 +58,7 @@ macro_rules! rules {
         let mut rules = Vec::new();
 
         $($(
-            rules.push(rule!($rule_name: ($($tt)*) $(=> $transformer)?).into());
+            rules.push($crate::rule!($rule_name: ($($tt)*) $(=> $transformer)?).into());
         )*)*
 
         let rules = $crate::rule::Rules::new(rules);
@@ -80,7 +80,7 @@ macro_rules! declare_rules {
 
         impl From<$name> for $crate::rule::Rules {
             fn from(_: $name) -> Self {
-                rules! {
+                $crate::rules! {
                     $($tt)*
                 }
             }

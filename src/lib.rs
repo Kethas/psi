@@ -3,9 +3,7 @@ pub mod prelude {
 
     pub use super::rule::{Rule, Rules};
 
-    pub use super::{rule, rules, declare_rules};
-
-    pub use super::rules::*;
+    pub use super::{declare_rules, rules};
 }
 
 pub mod result;
