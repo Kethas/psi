@@ -12,4 +12,6 @@ mod basic;
 
 mod recurse;
 
-mod rules;
+mod rules_tests;
+
+mod large_files;
