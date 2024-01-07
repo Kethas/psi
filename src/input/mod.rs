@@ -1,13 +1,4 @@
-use std::{
-    cell::RefCell,
-    fmt::Display,
-    fs::{File, OpenOptions},
-    io::BufReader,
-    path::Path,
-    rc::Rc,
-};
-
-use utf8_chars::BufReadCharsExt;
+use std::fmt::Display;
 
 pub trait Input<'a>: Clone + Display + 'a {
     fn next(&mut self) -> Option<char>;
