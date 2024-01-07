@@ -621,15 +621,19 @@ fn fail<'a>(
         } = &top.rule_trees[top.n]
         {
             log::debug!("Reached Recurse on fail");
-            let parse_value = last_buffer.unwrap().remove(0);
 
-            buffers.pop();
+            let mut last_buffer = last_buffer.unwrap();
+            if !last_buffer.is_empty() {
+                let parse_value = last_buffer.remove(0);
 
-            if let Some(res) = end(stack, buffers, parse_value, last_input) {
-                return Ok(Some(res));
+                buffers.pop();
+
+                if let Some(res) = end(stack, buffers, parse_value, last_input) {
+                    return Ok(Some(res));
+                }
+
+                break 'fail;
             }
-
-            break 'fail;
         }
 
         log::debug!(
