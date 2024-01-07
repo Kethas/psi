@@ -510,7 +510,7 @@ fn parse<'a>(
 
                     stack.push(ParseStackItem {
                         depth: top.depth + 1,
-                        rule,
+                        rule: top.rule,
                         rule_trees: rules.0.get(top.rule).ok_or_else(|| {
                             ParseError::RuleNotFound {
                                 rule_name: top.rule.to_owned(),
@@ -588,16 +588,6 @@ fn fail<'a>(
     buffers: &mut Vec<Vec<ParseValue>>,
     error: ParseError,
 ) -> Result<Option<(ParseValue, Input<'a>)>, ParseError> {
-    //let errors = vec![error];
-
-    // ab: ("a" "b")
-    // "ac"
-    // [0, ab, 0, "ab"]      [[]]
-    // [0, ab[0], 0, "b"]    [["a"]]
-    // inc n, can't inc, delete top, delete last item in last buffer
-    // inc n, can't inc, delete top, delete last item in last buffer
-    //
-
     log::debug!("ENTER FAIL");
 
     let mut last_buffer: Option<Vec<ParseValue>> = None;
@@ -608,10 +598,6 @@ fn fail<'a>(
         log::debug!("FAIL LOOP START");
         log::debug!("STACK: {stack:#?}");
         log::debug!("BUFFERS: {buffers:?}");
-
-        // if stack.is_empty() {
-        //     return Err(error)
-        // }
 
         let top = stack.last_mut().unwrap();
 
@@ -636,6 +622,8 @@ fn fail<'a>(
             }
         }
 
+        log::debug!("PARSE_ERROR: {error:#?}");
+
         log::debug!(
             "top.n = {}, top.rule_trees.len() = {}",
             top.n,
@@ -658,10 +646,6 @@ fn fail<'a>(
                 }
             } else {
                 return Err(error);
-                // return Err(ParseError::MultipleErrors {
-                //     current_rule: old_top.rule.to_owned(),
-                //     errors,
-                // });
             }
         }
     }
