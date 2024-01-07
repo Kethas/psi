@@ -2,7 +2,7 @@
 #[macro_export]
 macro_rules! rule_part {
     ($lit:literal) => {
-        $crate::rule::RulePart::Term(String::from($lit))
+        $crate::rule::RulePart::Term(std::string::String::from($lit))
     };
 
     ($rule:ident) => {
@@ -15,7 +15,7 @@ macro_rules! rule_part {
     }};
 
     ((! $($lit:literal)*)) => {
-        $crate::rule::RulePart::Not([$(String::from($lit)),*].into_iter().collect())
+        $crate::rule::RulePart::Not([$(std::string::String::from($lit)),*].into_iter().collect())
     }
 
 
@@ -65,8 +65,8 @@ macro_rules! rules {
 
         $(
             let mut rules = rules;
-            let rules_name: Option<String> = None$(.or(Some(stringify!($rules_name).to_owned())))?;
-            rules.import(Into::<Rules>::into($rules_expr), rules_name);
+            let rules_name: Option<std::string::String> = None$(.or(Some(stringify!($rules_name).to_owned())))?;
+            rules.import(Into::<$crate::rule::Rules>::into($rules_expr), rules_name);
         )*
 
         rules
@@ -78,7 +78,7 @@ macro_rules! declare_rules {
     ($visibility:vis $name:ident { $($tt:tt)* }) => {
         $visibility struct $name;
 
-        impl From<$name> for Rules {
+        impl From<$name> for $crate::rule::Rules {
             fn from(_: $name) -> Self {
                 rules! {
                     $($tt)*
@@ -92,7 +92,7 @@ macro_rules! declare_rules {
                 start_rule: &str,
                 input: impl Into<$crate::input::Input<'a>>,
             ) -> Result<$crate::result::ParseValue, $crate::result::ParseError> {
-                Rules::from(Self).parse(start_rule, input)
+                $crate::rule::Rules::from(Self).parse(start_rule, input)
             }
 
             pub fn parse_entire<'a>(
@@ -100,7 +100,7 @@ macro_rules! declare_rules {
                 start_rule: &str,
                 input: impl Into<$crate::input::Input<'a>>,
             ) -> Result<$crate::result::ParseValue, $crate::result::ParseError> {
-                Rules::from(Self).parse_entire(start_rule, input)
+                $crate::rule::Rules::from(Self).parse_entire(start_rule, input)
             }
         }
 

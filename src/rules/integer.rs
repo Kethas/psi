@@ -4,8 +4,6 @@ use super::*;
 
 declare_rules! {
     pub Integer {
-        start /* isize */ { (integer) }
-
         integer /* isize */ {
             (unsigned) => |v| (*v(0).downcast::<usize>().unwrap() as isize).into_value();
             ("+" unsigned) => |v| (*v(1).downcast::<usize>().unwrap() as isize).into_value();
