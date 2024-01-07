@@ -1,14 +1,15 @@
+use super::{Input, IntoInput};
 use std::{fmt::Display, str::Chars};
 
 #[derive(Clone)]
-pub struct Input<'a> {
+pub struct CharsInput<'a> {
     chars: Chars<'a>,
     pos: usize,
     col: usize,
     row: usize,
 }
 
-impl<'a> Input<'a> {
+impl<'a> CharsInput<'a> {
     pub fn new(chars: Chars<'a>) -> Self {
         Self {
             chars,
@@ -17,9 +18,10 @@ impl<'a> Input<'a> {
             row: 1,
         }
     }
+}
 
-    #[allow(clippy::should_implement_trait)]
-    pub fn next(&mut self) -> Option<char> {
+impl<'a> Input<'a> for CharsInput<'a> {
+    fn next(&mut self) -> Option<char> {
         self.chars.next().map(|c| {
             self.pos += 1;
 
@@ -34,35 +36,41 @@ impl<'a> Input<'a> {
         })
     }
 
-    pub fn pos(&self) -> usize {
+    fn pos(&self) -> usize {
         self.pos
     }
 
-    pub fn row_col(&self) -> (usize, usize) {
+    fn row_col(&self) -> (usize, usize) {
         (self.row, self.col)
     }
 }
 
-impl<'a> Display for Input<'a> {
+impl<'a> Display for CharsInput<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.chars.as_str())
     }
 }
 
-impl<'a> From<&'a str> for Input<'a> {
-    fn from(value: &'a str) -> Self {
-        Self::new(value.chars())
+impl<'a> IntoInput<'a> for &'a str {
+    type Input = CharsInput<'a>;
+
+    fn into_input(self) -> Self::Input {
+        Self::Input::new(self.chars())
     }
 }
 
-impl<'a> From<&'a String> for Input<'a> {
-    fn from(value: &'a String) -> Self {
-        Self::new(value.chars())
+impl<'a> IntoInput<'a> for &'a String {
+    type Input = CharsInput<'a>;
+
+    fn into_input(self) -> Self::Input {
+        Self::Input::new(self.chars())
     }
 }
 
-impl<'a> From<Chars<'a>> for Input<'a> {
-    fn from(value: Chars<'a>) -> Self {
-        Self::new(value)
+impl<'a> IntoInput<'a> for Chars<'a> {
+    type Input = CharsInput<'a>;
+
+    fn into_input(self) -> Self::Input {
+        Self::Input::new(self)
     }
 }

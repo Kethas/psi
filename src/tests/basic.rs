@@ -15,7 +15,7 @@ fn hello_world() {
 
     let input = "hello world";
 
-    let result = rules.parse_proc("start", input);
+    let result = rules.parse_entire("start", input);
 
     let result = result
         .expect("Could not parse")
@@ -70,7 +70,7 @@ fn aab() {
     assert_eq!(
         Some(Token::from("b".to_owned())),
         rules
-            .parse_proc("start", input0)
+            .parse_entire("start", input0)
             .expect("Should be parsed")
             .downcast_ref()
             .cloned()
@@ -79,7 +79,7 @@ fn aab() {
     assert_eq!(
         Some(vec![Token::from("a"), Token::from("b")]),
         rules
-            .parse_proc("start", input1)
+            .parse_entire("start", input1)
             .expect("Should be parsed")
             .downcast_ref()
             .cloned()
@@ -88,7 +88,7 @@ fn aab() {
     assert_eq!(
         Some(vec![Token::from("a"), Token::from("a"), Token::from("b")]),
         rules
-            .parse_proc("start", input2)
+            .parse_entire("start", input2)
             .expect("Should be parsed")
             .downcast_ref()
             .cloned()
@@ -102,7 +102,7 @@ fn aab() {
             Token::from("b")
         ]),
         rules
-            .parse_proc("start", input3)
+            .parse_entire("start", input3)
             .expect("Should be parsed")
             .downcast_ref()
             .cloned()
@@ -122,7 +122,7 @@ fn aab() {
                 .collect::<Vec<Token>>()
         ),
         rules
-            .parse_proc("start", &input_huge)
+            .parse_entire("start", &input_huge)
             .expect("Should be parsed")
             .downcast_ref()
             .cloned()
@@ -156,7 +156,7 @@ fn abc() {
     assert_eq!(
         &expected_result,
         rules
-            .parse_proc("start", input)
+            .parse_entire("start", input)
             .expect("Should be parsed")
             .downcast_ref()
             .unwrap()
@@ -186,7 +186,7 @@ fn xab() {
         assert_eq!(
             Some(&expected_result),
             rules
-                .parse_proc("start", input)
+                .parse_entire("start", input)
                 .expect("Should be parsed")
                 .downcast_ref()
         )
@@ -238,7 +238,7 @@ fn char_literal() {
         assert_eq!(
             expected_result,
             *rules
-                .parse_proc("start", input)
+                .parse_entire("start", input)
                 .expect("Should be parsed.")
                 .downcast_ref()
                 .unwrap()
@@ -273,7 +273,7 @@ fn import() {
         assert_eq!(
             Some(&expected_result),
             rules
-                .parse_proc("start", input)
+                .parse_entire("start", input)
                 .expect("Should be parsed")
                 .downcast_ref()
         )
@@ -339,7 +339,7 @@ fn import2() {
         assert_eq!(
             Some(&expected_result),
             rules
-                .parse_proc("start", input)
+                .parse_entire("start", input)
                 .expect("Should be parsed")
                 .downcast_ref()
         );

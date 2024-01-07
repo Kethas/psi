@@ -1,5 +1,5 @@
 pub mod prelude {
-    pub use super::result::{IntoParseValue as _, ParseError, ParseResult, ParseValue, Token};
+    pub use super::result::{IntoParseValue as _, ParseError, ParseValue, Token};
 
     pub use super::rule::{Rule, Rules};
 

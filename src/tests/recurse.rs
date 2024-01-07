@@ -25,7 +25,7 @@ fn left_recursion() {
     assert_eq!(
         Some(&String::from("x")),
         rules
-            .parse_proc("start", input0)
+            .parse_entire("start", input0)
             .expect("Should be parsed")
             .downcast_ref(),
     );
@@ -35,7 +35,7 @@ fn left_recursion() {
     assert_eq!(
         Some(&String::from("x+x")),
         rules
-            .parse_proc("start", input1)
+            .parse_entire("start", input1)
             .expect("Should be parsed")
             .downcast_ref(),
     );
@@ -45,7 +45,7 @@ fn left_recursion() {
     assert_eq!(
         Some(&String::from("x+x+x")),
         rules
-            .parse_proc("start", input2)
+            .parse_entire("start", input2)
             .expect("Should be parsed")
             .downcast_ref(),
     );
@@ -99,7 +99,7 @@ fn ternary() {
     assert_eq!(
         Some(&expected_result),
         rules
-            .parse_proc("start", input)
+            .parse_entire("start", input)
             .expect("Should be parsed")
             .downcast_ref::<Vec<TernaryDigit>>()
     )
@@ -176,7 +176,7 @@ fn calculator() {
 
     let expected_result = 12 * 5 + 16 * 2;
 
-    let result = rules.parse_proc("start", input);
+    let result = rules.parse_entire("start", input);
 
     assert_eq!(
         Some(expected_result),

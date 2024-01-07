@@ -87,18 +87,18 @@ macro_rules! declare_rules {
         }
 
         impl $name {
-            pub fn parse<'a>(
+            pub fn parse<'a, I: $crate::input::IntoInput<'a>>(
                 &self,
                 start_rule: &str,
-                input: impl Into<$crate::input::Input<'a>>,
+                input: I,
             ) -> Result<$crate::result::ParseValue, $crate::result::ParseError> {
                 $crate::rule::Rules::from(Self).parse(start_rule, input)
             }
 
-            pub fn parse_entire<'a>(
+            pub fn parse_entire<'a, I: $crate::input::IntoInput<'a>>(
                 &self,
                 start_rule: &str,
-                input: impl Into<$crate::input::Input<'a>>,
+                input: I,
             ) -> Result<$crate::result::ParseValue, $crate::result::ParseError> {
                 $crate::rule::Rules::from(Self).parse_entire(start_rule, input)
             }

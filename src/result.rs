@@ -1,4 +1,3 @@
-use super::input::Input;
 use std::any::Any;
 
 use derive_more::{Deref, DerefMut, Display};
@@ -55,4 +54,3 @@ pub enum ParseError {
     },
 }
 
-pub type ParseResult<'a> = Result<Option<(ParseValue, Input<'a>)>, ParseError>;

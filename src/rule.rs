@@ -2,10 +2,12 @@ use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},
     fmt::Debug,
+    marker::PhantomData,
     rc::Rc,
 };
 
-use super::input::Input;
+use crate::input::{Input, IntoInput};
+
 use super::result::*;
 
 pub type ParseBuffer<'a> = &'a mut dyn FnMut(usize) -> ParseValue;
@@ -168,12 +170,12 @@ impl Rules {
         }
     }
 
-    pub fn parse_entire<'a>(
+    pub fn parse_entire<'a, I: IntoInput<'a>>(
         &self,
         start_rule: &str,
-        input: impl Into<Input<'a>>,
+        input: I,
     ) -> Result<ParseValue, ParseError> {
-        parse(self, start_rule, input.into()).and_then(|(value, mut input)| {
+        parse(self, start_rule, input.into_input()).and_then(|(value, mut input)| {
             let (row, col) = input.row_col();
 
             if let Some(char) = input.next() {
@@ -190,20 +192,12 @@ impl Rules {
         })
     }
 
-    pub fn parse<'a>(
+    pub fn parse<'a, I: IntoInput<'a>>(
         &self,
         start_rule: &str,
-        input: impl Into<Input<'a>>,
+        input: I,
     ) -> Result<ParseValue, ParseError> {
-        parse(self, start_rule, input.into()).map(|x| x.0)
-    }
-
-    pub fn parse_proc<'a>(
-        &self,
-        start_rule: &str,
-        input: impl Into<Input<'a>>,
-    ) -> Result<ParseValue, ParseError> {
-        parse(self, start_rule, input.into()).map(|x| x.0)
+        parse(self, start_rule, input.into_input()).map(|x| x.0)
     }
 
     fn smush(trees: Vec<RuleTree>) -> Vec<RuleTree> {
@@ -295,19 +289,21 @@ impl Rules {
 
 #[derive(Clone)]
 
-struct ParseStackItem<'a, 'i> {
+struct ParseStackItem<'a, 'i, I: Input<'i>> {
     depth: usize,
     // The current rule
     rule: &'a str,
     rule_trees: &'a [RuleTree],
     n: usize,
-    input: Input<'i>,
+    input: I,
 
     // primarily for debugging
     prev_path: Vec<usize>,
+
+    _phantom: PhantomData<&'i I>,
 }
 
-impl<'a, 'i> Debug for ParseStackItem<'a, 'i> {
+impl<'a, 'i, I: Input<'i>> Debug for ParseStackItem<'a, 'i, I> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let ParseStackItem {
             depth,
@@ -331,11 +327,11 @@ impl<'a, 'i> Debug for ParseStackItem<'a, 'i> {
 }
 
 #[inline]
-fn parse<'a>(
+fn parse<'a, 'i, I: Input<'i>>(
     rules: &Rules,
     rule: &str,
-    input: Input<'a>,
-) -> Result<(ParseValue, Input<'a>), ParseError> {
+    input: I,
+) -> Result<(ParseValue, I), ParseError> {
     let rule_trees = rules.0.get(rule).ok_or_else(|| ParseError::RuleNotFound {
         rule_name: rule.to_owned(),
     })?;
@@ -346,6 +342,7 @@ fn parse<'a>(
         n: 0,
         prev_path: vec![],
         input,
+        _phantom: PhantomData,
     }];
 
     let mut buffers: Vec<Vec<ParseValue>> = vec![vec![]];
@@ -498,6 +495,7 @@ fn parse<'a>(
                         n: 0,
                         input: top.input,
                         prev_path: vec![],
+                        _phantom: PhantomData,
                     });
 
                     buffers.push(Vec::new());
@@ -519,6 +517,7 @@ fn parse<'a>(
                         n: 1,
                         input: top.input,
                         prev_path: vec![],
+                        _phantom: PhantomData,
                     });
 
                     buffers.push(Vec::new());
@@ -569,6 +568,7 @@ fn parse<'a>(
                     n: 0,
                     input,
                     prev_path,
+                    _phantom: PhantomData,
                 });
 
                 buffers.last_mut().unwrap().push(token.into_value());
@@ -583,11 +583,11 @@ fn parse<'a>(
 }
 
 #[inline]
-fn fail<'a>(
-    stack: &mut Vec<ParseStackItem<'_, 'a>>,
+fn fail<'a, 'i, I: Input<'i>>(
+    stack: &mut Vec<ParseStackItem<'a, 'i, I>>,
     buffers: &mut Vec<Vec<ParseValue>>,
     error: ParseError,
-) -> Result<Option<(ParseValue, Input<'a>)>, ParseError> {
+) -> Result<Option<(ParseValue, I)>, ParseError> {
     log::debug!("ENTER FAIL");
 
     let mut last_buffer: Option<Vec<ParseValue>> = None;
@@ -653,12 +653,12 @@ fn fail<'a>(
     Ok(None)
 }
 
-fn end<'a>(
-    stack: &mut Vec<ParseStackItem<'_, 'a>>,
+fn end<'a, 'i, I: Input<'i>>(
+    stack: &mut Vec<ParseStackItem<'a, 'i, I>>,
     buffers: &mut Vec<Vec<ParseValue>>,
     parse_value: ParseValue,
-    override_input: Option<Input<'a>>,
-) -> Option<(ParseValue, Input<'a>)> {
+    override_input: Option<I>,
+) -> Option<(ParseValue, I)> {
     let top = stack.last().unwrap().clone();
 
     let input = override_input.unwrap_or_else(|| top.input.clone());
