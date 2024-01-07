@@ -7,6 +7,7 @@ declare_rules! {
 
         string {
             ("\"" string_inner "\"") => |v| v(1);
+            ("\"\"") => |_| String::new().into_value();
         }
 
         string_inner {

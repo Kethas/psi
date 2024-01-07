@@ -130,6 +130,7 @@ fn string() {
     init();
 
     let inputs = [
+        ("\"\"", ""),
         ("\"abcd\"", "abcd"),
         ("\"ab\\\"cd\"", "ab\"cd"),
         ("\"\\n\\r\\t\\0\"", "\n\r\t\0"),
