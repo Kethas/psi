@@ -1,8 +1,4 @@
-use std::{
-    net::{TcpListener, TcpStream},
-    path::PathBuf,
-    time::Duration,
-};
+use std::path::PathBuf;
 
 use super::*;
 
@@ -52,6 +48,7 @@ fn json_1mb() {
 }
 
 // This test assumes that the working directory is the crate root
+#[cfg(feature = "file_input")]
 #[test]
 #[ignore]
 fn read_json_1mb() {
@@ -68,9 +65,13 @@ fn read_json_1mb() {
     assert!(parsed.is_ok() && parsed.unwrap().is_ok());
 }
 
+#[cfg(feature = "tcp_input")]
 #[test]
 #[ignore]
 fn local_tcp_stream_json_1mb() {
+    use std::net::{TcpListener, TcpStream};
+    use std::time::Duration;
+
     init();
 
     // spawn server that listens to 1 request

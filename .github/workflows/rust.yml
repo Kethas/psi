@@ -13,6 +13,6 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - name: Build
-      run: cargo build --verbose
+      run: cargo build --verbose --all-features
     - name: Run tests
-      run: cargo test --verbose -- --include-ignored --skip tests::large_files::json_huge_file
+      run: cargo test --verbose --all-features -- --include-ignored --skip tests::large_files::json_huge_file

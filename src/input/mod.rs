@@ -15,5 +15,7 @@ pub trait IntoInput<'a>: 'a {
 pub mod chars;
 pub mod vec;
 
+#[cfg(feature = "file_input")]
 pub mod file;
+#[cfg(feature = "tcp_input")]
 pub mod tcp;

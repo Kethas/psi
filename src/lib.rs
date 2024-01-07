@@ -14,6 +14,7 @@ pub mod rule;
 
 pub mod macros;
 
+#[cfg(feature = "included_parsers")]
 pub mod rules;
 
 #[cfg(test)]

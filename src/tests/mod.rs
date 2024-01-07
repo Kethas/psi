@@ -12,6 +12,7 @@ mod basic;
 
 mod recurse;
 
+#[cfg(feature = "included_parsers")]
 mod rules_tests;
 
 mod large_files;

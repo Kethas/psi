@@ -12,8 +12,18 @@ categories = ["parsing"]
 
 include = ["**/*.rs", "Cargo.toml"]
 
+[features]
+
+default = ["included_parsers", "file_input"]
+
+# included parsers (src/rules)
+included_parsers = []
+
+file_input = ["dep:utf8-chars"]
+tcp_input = ["dep:utf8-chars"]
+
 [dependencies]
 derive_more = "0.99.17"
 env_logger = "0.10.1"
 log = "0.4.20"
-utf8-chars = "3.0.1"
+utf8-chars = { version = "3.0.1", optional = true }
