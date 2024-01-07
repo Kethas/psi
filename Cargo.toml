@@ -2,7 +2,7 @@
 name = "psi-parser"
 description = "A parser aiming to trade performance for ease of use."
 authors = ["Kethas <kethas@asphyx.dev>"]
-version = "0.2.3"
+version = "0.2.4"
 edition = "2021"
 license-file = "LICENSE"
 repository = "https://github.com/Kethas/psi"
