@@ -3,7 +3,7 @@ use super::*;
 declare_rules! {
     pub Hex {
         hex {
-            (prefixed_hex) 
+            (prefixed_hex)
                 => |v| usize::from_str_radix(
                     &v(0).downcast::<String>().unwrap(),
                     16

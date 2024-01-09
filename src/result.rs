@@ -1,4 +1,4 @@
-use std::any::Any;
+use std::{any::Any, error::Error, fmt::Display};
 
 use derive_more::{Deref, DerefMut, Display};
 
@@ -29,7 +29,7 @@ impl<T: Into<String>> From<T> for Token {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Debug)]
 pub enum ParseError {
     RuleNotFound {
         rule_name: String,
@@ -48,9 +48,77 @@ pub enum ParseError {
         row: usize,
         col: usize,
     },
-    MultipleErrors {
+    TransformerError {
         current_rule: String,
-        errors: Vec<ParseError>,
+        pos: usize,
+        row: usize,
+        col: usize,
+        error: Box<dyn Error>,
     },
 }
 
+impl Error for ParseError {
+    fn cause(&self) -> Option<&dyn Error> {
+        match self {
+            ParseError::TransformerError { error, .. } => Some(error.as_ref()),
+            _ => None,
+        }
+    }
+}
+
+impl Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParseError::RuleNotFound { rule_name } => {
+                f.write_fmt(format_args!("Rule '{rule_name}' not found"))
+            }
+            ParseError::UnexpectedChar {
+                current_rule,
+                char: Some(char),
+                pos,
+                row,
+                col,
+            } => f.write_fmt(format_args!(
+                "Unexpected char at position {pos} (row {row}, column {col}) while parsing rule '{current_rule}': '{char}'"
+            )),
+            ParseError::UnexpectedChar {
+                current_rule,
+                char: None,
+                pos,
+                row,
+                col,
+            } => f.write_fmt(format_args!(
+                "Unexpected end of input at position {pos} (row {row}, column {col}) while parsing rule '{current_rule}'"
+            )),
+            ParseError::UnexpectedToken {
+                current_rule,
+                token,
+                pos,
+                row,
+                col,
+            } => f.write_fmt(format_args!(
+                "Unexpected token at position {pos} (row {row}, column {col}) while parsing rule '{current_rule}': \"{token}\""
+            )),
+            ParseError::TransformerError {
+                current_rule,
+                pos,
+                row,
+                col,
+                error,
+            } => f.write_fmt(format_args!("Error while transforming rule '{current_rule}' at position {pos} (row {row}, column {col}): {error}")),
+        }
+    }
+}
+
+pub trait IntoParseError {
+    fn into_error(self) -> ParseValue;
+}
+
+impl<E: Error + 'static> IntoParseError for E {
+    fn into_error(self) -> ParseValue {
+        // Make sure it's dynamic
+        let error: Box<dyn Error> = Box::new(self);
+        // Double boxed
+        Box::new(error)
+    }
+}

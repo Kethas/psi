@@ -12,6 +12,8 @@ mod basic;
 
 mod recurse;
 
+mod errors;
+
 #[cfg(feature = "included_parsers")]
 mod rules_tests;
 

@@ -104,7 +104,6 @@ impl<'a> IntoInput<'a> for &'a Path {
     }
 }
 
-
 impl<'a> IntoInput<'a> for &'a PathBuf {
     type Input = FileInput<'a>;
 
@@ -112,4 +111,3 @@ impl<'a> IntoInput<'a> for &'a PathBuf {
         Self::Input::new(self)
     }
 }
-

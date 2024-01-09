@@ -1,7 +1,8 @@
 use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},
-    fmt::Debug,
+    error::Error,
+    fmt::{Debug, Write},
     marker::PhantomData,
     rc::Rc,
 };
@@ -287,6 +288,9 @@ impl Rules {
     }
 }
 
+// represents no parsed content -- private so that no other place can accidentally create it
+struct Nothing;
+
 #[derive(Clone)]
 
 struct ParseStackItem<'a, 'i, I: Input<'i>> {
@@ -301,6 +305,37 @@ struct ParseStackItem<'a, 'i, I: Input<'i>> {
     prev_path: Vec<usize>,
 
     _phantom: PhantomData<&'i I>,
+}
+
+struct BufferFormatter<'a>(&'a [ParseValue]);
+
+impl<'a> Debug for BufferFormatter<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_char('[')?;
+
+        let mut first = true;
+        for val in self.0 {
+            if !first {
+                f.write_str(", ")?;
+            } else {
+                first = false;
+            }
+
+            if val.is::<Nothing>() {
+                f.write_str("()")?;
+            } else if val.is::<Vec<ParseValue>>() {
+                f.write_str("Vec<ParseValue>[...]")?;
+            } else if let Some(token) = val.downcast_ref::<Token>() {
+                f.write_fmt(format_args!("Token(\"{token}\")"))?;
+            } else if let Some(string) = val.downcast_ref::<String>() {
+                f.write_fmt(format_args!("\"{string}\""))?;
+            } else {
+                Debug::fmt(val, f)?;
+            }
+        }
+
+        f.write_char(']')
+    }
 }
 
 impl<'a, 'i, I: Input<'i>> Debug for ParseStackItem<'a, 'i, I> {
@@ -352,7 +387,13 @@ fn parse<'a, 'i, I: Input<'i>>(
 
         log::debug!("\n\n\n\n");
         log::debug!("STACK: {stack:#?}");
-        log::debug!("BUFFERS: {buffers:?}");
+        log::debug!(
+            "BUFFERS: {:?}",
+            buffers
+                .iter()
+                .map(|b| BufferFormatter(b))
+                .collect::<Vec<_>>()
+        );
 
         let rule_tree = &top.rule_trees[top.n];
 
@@ -538,9 +579,36 @@ fn parse<'a, 'i, I: Input<'i>>(
                         value.take().unwrap()
                     };
 
-                    transformer(&mut parse_buffer)
+                    let parse_value = transformer(&mut parse_buffer);
+
+                    match parse_value.downcast::<Box<dyn Error>>() {
+                        Ok(error) => {
+                            log::debug!("Transformer error!");
+
+                            let pos = top.input.pos();
+                            let (row, col) = top.input.row_col();
+                            buffers.push(Vec::new());
+                            if let Some(res) = fail(
+                                &mut stack,
+                                &mut buffers,
+                                ParseError::TransformerError {
+                                    current_rule: top.rule.to_owned(),
+                                    pos,
+                                    row,
+                                    col,
+                                    error: *error,
+                                },
+                            )? {
+                                return Ok(res);
+                            }
+                            continue 'main;
+                        }
+                        Err(parse_value) => parse_value,
+                    }
                 } else if buffer.len() == 1 {
                     buffer.remove(0)
+                } else if buffer.is_empty() || buffer.iter().all(|x| x.is::<Nothing>()) {
+                    Nothing.into_value()
                 } else {
                     buffer.into_value()
                 };
@@ -597,7 +665,13 @@ fn fail<'a, 'i, I: Input<'i>>(
         log::debug!("\n\n\n\n");
         log::debug!("FAIL LOOP START");
         log::debug!("STACK: {stack:#?}");
-        log::debug!("BUFFERS: {buffers:?}");
+        log::debug!(
+            "BUFFERS: {:?}",
+            buffers
+                .iter()
+                .map(|b| BufferFormatter(b))
+                .collect::<Vec<_>>()
+        );
 
         let top = stack.last_mut().unwrap();
 
@@ -609,7 +683,7 @@ fn fail<'a, 'i, I: Input<'i>>(
             log::debug!("Reached Recurse on fail");
 
             let mut last_buffer = last_buffer.unwrap();
-            if !last_buffer.is_empty() {
+            if !(last_buffer.is_empty() || last_buffer.iter().all(|x| x.is::<Nothing>())) {
                 let parse_value = last_buffer.remove(0);
 
                 buffers.pop();
@@ -633,9 +707,11 @@ fn fail<'a, 'i, I: Input<'i>>(
         last_input = Some(top.input.clone());
 
         if top.n + 1 < top.rule_trees.len() {
+            log::debug!("INC N");
             top.n += 1;
             break 'fail;
         } else {
+            log::debug!("POP TOP");
             let old_top = stack.pop().unwrap();
 
             if let Some(top) = stack.last_mut() {
