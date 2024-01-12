@@ -255,3 +255,74 @@ fn json() {
         )
     }
 }
+
+#[test]
+fn xml() {
+    use rules::simple_xml::Xml;
+    init();
+
+    let inputs = [
+        (
+            "<node attribute=id attribute2='string&amp;'>text <self_closing/> </node>",
+            Ok(Xml::Node(
+                "node".to_owned(),
+                {
+                    let mut map = HashMap::new();
+                    map.insert("attribute".to_owned(), "id".to_string());
+                    map.insert("attribute2".to_owned(), "string&".to_string());
+                    map
+                },
+                vec![
+                    Xml::Text("text ".to_owned()),
+                    Xml::Node("self_closing".to_owned(), HashMap::new(), Vec::new()),
+                    Xml::Text(" ".to_owned()),
+                ],
+            )),
+        ),
+        (
+            "<xml/>",
+            Err(
+                /*ParseError::TransformerError {
+                    current_rule: "node".to_owned(),
+                    pos: 6,
+                    row: 1,
+                    col: 7,
+                    error: Box::new(XmlParseError::IllegalTagName {
+                        tag: "xml".to_owned(),
+                    }),
+                }
+                .to_string()*/
+                (),
+            ),
+        ),
+        (
+            "<a><b/></c>",
+            Err(
+                /*ParseError::TransformerError {
+                    current_rule: "node".to_owned(),
+                    pos: 11,
+                    row: 1,
+                    col: 12,
+                    error: Box::new(XmlParseError::NonMatchingTagNames {
+                        start_tag: "a".to_owned(),
+                        end_tag: "c".to_owned(),
+                    }),
+                }
+                .to_string()*/
+                (),
+            ),
+        ),
+    ];
+
+    for (input, expected_result) in inputs {
+        log::debug!("input = \"{input}\"");
+
+        assert_eq!(
+            expected_result,
+            rules::XmlRules
+                .parse_entire("start", input)
+                .map(|res| *res.downcast::<Xml>().unwrap())
+                .map_err(|_| ())
+        )
+    }
+}
