@@ -130,7 +130,7 @@ pub mod simple_xml {
             #[import (rules::Identifier) as id]
 
             start {
-                ((ws::ws_ml) xml (ws::ws_ml))
+                ((ws::ws_ml) xml (ws::ws_ml)) => |v| v(1);
             }
 
             xml {
@@ -139,7 +139,8 @@ pub mod simple_xml {
             }
 
             text {
-                () => |_| String::new().into_value();
+                ((! "<" "&")) => |v| v(0).downcast::<Token>().unwrap().to_string().into_value();
+                (escape) => |v| [*v(0).downcast::<char>().unwrap()].into_iter().collect::<String>().into_value();
                 (text escape) => |v| {
                     let mut text = v(0).downcast::<String>().unwrap();
                     text.push(*v(1).downcast::<char>().unwrap());
