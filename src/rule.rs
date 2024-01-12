@@ -659,7 +659,7 @@ fn fail<'a, 'i, I: Input<'i>>(
     log::debug!("ENTER FAIL");
 
     let mut last_buffer: Option<Vec<ParseValue>> = None;
-    let mut last_input = None;
+    let mut last_input: Option<I> = None;
 
     'fail: loop {
         log::debug!("\n\n\n\n");
@@ -683,7 +683,20 @@ fn fail<'a, 'i, I: Input<'i>>(
             log::debug!("Reached Recurse on fail");
 
             let mut last_buffer = last_buffer.unwrap();
-            if !(last_buffer.is_empty() || last_buffer.iter().all(|x| x.is::<Nothing>())) {
+
+            log::debug!("STACK TOP: {top:#?}");
+            log::debug!("LAST BUFFER: {:?}", BufferFormatter(&last_buffer));
+            log::debug!(
+                "LAST INPUT: {}",
+                if let Some(input) = &last_input {
+                    input.to_string()
+                } else {
+                    "None".to_owned()
+                }
+            );
+
+            if !last_buffer.is_empty()
+            {
                 let parse_value = last_buffer.remove(0);
 
                 buffers.pop();
