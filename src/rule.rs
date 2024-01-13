@@ -695,8 +695,7 @@ fn fail<'a, 'i, I: Input<'i>>(
                 }
             );
 
-            if !last_buffer.is_empty()
-            {
+            if !last_buffer.is_empty() {
                 let parse_value = last_buffer.remove(0);
 
                 buffers.pop();
