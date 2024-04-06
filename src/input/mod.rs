@@ -1,9 +1,25 @@
+use crate::result::LineInfo;
 use std::fmt::Display;
+use std::path::PathBuf;
 
 pub trait Input<'a>: Clone + Display + 'a {
     fn next(&mut self) -> Option<char>;
     fn pos(&self) -> usize;
     fn row_col(&self) -> (usize, usize);
+
+    fn filename(&self) -> Option<String> {
+        None
+    }
+    fn path(&self) -> Option<PathBuf> {
+        None
+    }
+
+    fn line_info(&self) -> LineInfo {
+        let pos = self.pos();
+        let (line, column) = self.row_col();
+
+        LineInfo { pos, line, column }
+    }
 }
 
 pub trait IntoInput<'a>: 'a {

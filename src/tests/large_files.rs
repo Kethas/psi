@@ -42,8 +42,6 @@ fn json_1mb() {
         .parse_entire("start", JSON_1MB)
         .map(|result| result.downcast::<rules::json::Json>());
 
-    println!("Parsed: {parsed:#?}");
-
     assert!(parsed.is_ok() && parsed.unwrap().is_ok());
 }
 

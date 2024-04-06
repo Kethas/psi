@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::{any::Any, error::Error, fmt::Display};
 
 use derive_more::{Deref, DerefMut, Display};
@@ -121,4 +122,19 @@ impl<E: Error + 'static> IntoParseError for E {
         // Double boxed
         Box::new(error)
     }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct LineInfo {
+    pub pos: usize,
+    pub line: usize,
+    pub column: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct Span {
+    pub filename: Option<String>,
+    pub path: Option<PathBuf>,
+    pub start: LineInfo,
+    pub end: LineInfo,
 }

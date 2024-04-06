@@ -10,9 +10,9 @@ fn left_recursion() {
         }
 
         expr {
-            ("x") => |_| "x".to_owned().into_value();
+            ("x") => |_, _| "x".to_owned().into_value();
             (expr "+" "x")
-            => |v| format!(
+            => |v, _| format!(
                 "{}+{}",
                 v(0).downcast::<String>().unwrap(),
                 v(2).downcast::<Token>().unwrap()
@@ -66,30 +66,30 @@ fn ternary() {
         }
 
         ternary {
-            ("0") => |_| vec![TernaryDigit::Zero].into_value();
+            ("0") => |_, _| vec![TernaryDigit::Zero].into_value();
             (ternary_inner)
         }
 
         ternary_inner /* Vec<TernaryDigit> */ {
-            (ternary_inner digit) => |v| {
+            (ternary_inner digit) => |v, _| {
                 let mut vec = v(0).downcast::<Vec<TernaryDigit>>().unwrap();
                 vec.push(*v(1).downcast::<TernaryDigit>().unwrap());
 
                 vec
             };
-            (digit_nonzero) => |v| vec![*v(0).downcast::<TernaryDigit>().unwrap()].into_value();
+            (digit_nonzero) => |v, _| vec![*v(0).downcast::<TernaryDigit>().unwrap()].into_value();
         }
 
 
         digit_nonzero /* TernaryDigit */ {
-            ("1") => |_| TernaryDigit::One.into_value();
-            ("2") => |_| TernaryDigit::Two.into_value();
+            ("1") => |_, _| TernaryDigit::One.into_value();
+            ("2") => |_, _| TernaryDigit::Two.into_value();
         }
 
         digit /* TernaryDigit */ {
-            ("0") => |_| TernaryDigit::Zero.into_value();
-            ("1") => |_| TernaryDigit::One.into_value();
-            ("2") => |_| TernaryDigit::Two.into_value();
+            ("0") => |_, _| TernaryDigit::Zero.into_value();
+            ("1") => |_, _| TernaryDigit::One.into_value();
+            ("2") => |_, _| TernaryDigit::Two.into_value();
         }
     };
 
@@ -111,7 +111,7 @@ fn calculator() {
 
     let rules = rules! {
         start {
-            (ws term ws) => |v| v(1);
+            (ws term ws) => |v, _| v(1);
         }
 
         ws {
@@ -126,14 +126,14 @@ fn calculator() {
         term {
             (factor)
             (term ws "+" ws term)
-             => |v| (*v(0).downcast::<i32>().unwrap() + *v(4).downcast::<i32>().unwrap()).into_value();
+             => |v, _| (*v(0).downcast::<i32>().unwrap() + *v(4).downcast::<i32>().unwrap()).into_value();
         }
 
         factor {
             (int)
-            ("(" ws expr ws ")") => |v| v(2);
+            ("(" ws expr ws ")") => |v, _| v(2);
             (factor ws "*" ws factor)
-                => |v| (*v(0).downcast::<i32>().unwrap() * *v(4).downcast::<i32>().unwrap()).into_value();
+                => |v, _| (*v(0).downcast::<i32>().unwrap() * *v(4).downcast::<i32>().unwrap()).into_value();
         }
 
         digit_nonzero {
@@ -149,23 +149,23 @@ fn calculator() {
         }
 
         int {
-            ("0") => |_| 0.into_value();
+            ("0") => |_, _| 0.into_value();
             (_int)
-                => |v| v(0).downcast::<String>().unwrap().parse::<i32>().unwrap().into_value();
+                => |v, _| v(0).downcast::<String>().unwrap().parse::<i32>().unwrap().into_value();
         }
 
         _int {
-            (digit_nonzero) => |v| v(0).downcast::<Token>().unwrap().to_string().into_value();
+            (digit_nonzero) => |v, _| v(0).downcast::<Token>().unwrap().to_string().into_value();
 
             (_int digit_nonzero)
-                => |v| format!(
+                => |v, _| format!(
                     "{}{}",
                     v(0).downcast::<String>().unwrap(),
                     v(1).downcast::<Token>().unwrap()
                 ).into_value();
 
             (_int "0")
-            => |v| format!(
+            => |v, _| format!(
                 "{}0",
                 v(0).downcast::<String>().unwrap(),
             ).into_value();

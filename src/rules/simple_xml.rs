@@ -97,24 +97,24 @@ declare_rules! {
         #[import (rules::Identifier) as id]
 
         start {
-            ((ws::ws_ml) xml (ws::ws_ml)) => |v| v(1);
+            ((ws::ws_ml) xml (ws::ws_ml)) => |v, _| v(1);
         }
 
         xml {
             (node)
-            (text) => |v| Xml::Text(*v(0).downcast::<String>().unwrap()).into_value();
+            (text) => |v, _| Xml::Text(*v(0).downcast::<String>().unwrap()).into_value();
         }
 
         text {
-            ((! "<" "&")) => |v| v(0).downcast::<Token>().unwrap().to_string().into_value();
-            (escape) => |v| [*v(0).downcast::<char>().unwrap()].into_iter().collect::<String>().into_value();
-            (text escape) => |v| {
+            ((! "<" "&")) => |v, _| v(0).downcast::<Token>().unwrap().to_string().into_value();
+            (escape) => |v, _| [*v(0).downcast::<char>().unwrap()].into_iter().collect::<String>().into_value();
+            (text escape) => |v, _| {
                 let mut text = v(0).downcast::<String>().unwrap();
                 text.push(*v(1).downcast::<char>().unwrap());
 
                 text
             };
-            (text (! "<" "&")) => |v| {
+            (text (! "<" "&")) => |v, _| {
                 let mut text = v(0).downcast::<String>().unwrap();
                 text.push_str(v(1).downcast::<Token>().unwrap().as_str());
 
@@ -123,18 +123,18 @@ declare_rules! {
         }
 
         escape {
-            ("&lt;") => |_| '<'.into_value();
-            ("&gt;") => |_| '>'.into_value();
-            ("&quot;") => |_| '"'.into_value();
-            ("&apos;") => |_| '\''.into_value();
-            ("&amp;") => |_| '&'.into_value();
+            ("&lt;") => |_, _| '<'.into_value();
+            ("&gt;") => |_, _| '>'.into_value();
+            ("&quot;") => |_, _| '"'.into_value();
+            ("&apos;") => |_, _| '\''.into_value();
+            ("&amp;") => |_, _| '&'.into_value();
         }
 
         node {
             ("<" (id::identifier) (ws::ws_ml) attributes (ws::ws_ml) ">"
              node_inner
              "</" (id::identifier) (ws::ws_ml) ">" )
-             => |v| {
+             => |v, _| {
                 let tag_name = *v(1).downcast::<String>().unwrap();
                 let tag_name_end = *v(8).downcast::<String>().unwrap();
 
@@ -155,7 +155,7 @@ declare_rules! {
 
              ("<" (id::identifier) (ws::ws_ml) attributes (ws::ws_ml) ">"
              "</" (id::identifier) (ws::ws_ml) ">" )
-             => |v| {
+             => |v, _| {
                 let tag_name = *v(1).downcast::<String>().unwrap();
                 let tag_name_end = *v(7).downcast::<String>().unwrap();
 
@@ -176,7 +176,7 @@ declare_rules! {
 
              ("<" (id::identifier) (ws::ws_ml) attributes (ws::ws_ml) "/>")
 
-             => |v| {
+             => |v, _| {
                 let tag_name = *v(1).downcast::<String>().unwrap();
 
                 if tag_name.eq_ignore_ascii_case("xml") {
@@ -191,8 +191,8 @@ declare_rules! {
         }
 
         node_inner {
-            (xml) => |v| vec![*v(0).downcast::<Xml>().unwrap()].into_value();
-            (node_inner xml) => |v| {
+            (xml) => |v, _| vec![*v(0).downcast::<Xml>().unwrap()].into_value();
+            (node_inner xml) => |v, _| {
                 let mut vec = v(0).downcast::<Vec<Xml>>().unwrap();
                 vec.push(*v(1).downcast::<Xml>().unwrap());
 
@@ -201,8 +201,8 @@ declare_rules! {
         }
 
         attributes {
-            () => |_| HashMap::<String, String>::new().into_value();
-            (attributes (ws::ws_ml) attribute) => |v| {
+            () => |_, _| HashMap::<String, String>::new().into_value();
+            (attributes (ws::ws_ml) attribute) => |v, _| {
                 let mut map = v(0).downcast::<HashMap<String, String>>().unwrap();
                 let (k, v) = *v(2).downcast::<(String, String)>().unwrap();
                 map.insert(k, v);
@@ -213,27 +213,27 @@ declare_rules! {
 
         attribute {
             ((id::identifier) (ws::ws_ml) "=" (ws::ws_ml) (id::identifier))
-                => |v| (*v(0).downcast::<String>().unwrap(), *v(4).downcast::<String>().unwrap()).into_value();
+                => |v, _| (*v(0).downcast::<String>().unwrap(), *v(4).downcast::<String>().unwrap()).into_value();
             ((id::identifier) (ws::ws_ml) "=" (ws::ws_ml) (string))
-                => |v| (*v(0).downcast::<String>().unwrap(), *v(4).downcast::<String>().unwrap()).into_value();
+                => |v, _| (*v(0).downcast::<String>().unwrap(), *v(4).downcast::<String>().unwrap()).into_value();
 
         }
 
 
         string {
-            ("\"" d_string_inner "\"") => |v| v(1);
-            ("'" s_string_inner "'") => |v| v(1);
+            ("\"" d_string_inner "\"") => |v, _| v(1);
+            ("'" s_string_inner "'") => |v, _| v(1);
         }
 
         d_string_inner {
-            () => |_| String::new().into_value();
-            (d_string_inner escape) => |v| {
+            () => |_, _| String::new().into_value();
+            (d_string_inner escape) => |v, _| {
                 let mut str = v(0).downcast::<String>().unwrap();
                 str.push(*v(1).downcast::<char>().unwrap());
 
                 str
             };
-            (d_string_inner (! "\"" "&"))  => |v| {
+            (d_string_inner (! "\"" "&"))  => |v, _| {
                 let mut str = v(0).downcast::<String>().unwrap();
                 str.push_str(v(1).downcast::<Token>().unwrap().as_str());
 
@@ -242,14 +242,14 @@ declare_rules! {
         }
 
         s_string_inner {
-            () => |_| String::new().into_value();
-            (s_string_inner escape) => |v| {
+            () => |_, _| String::new().into_value();
+            (s_string_inner escape) => |v, _| {
                 let mut str = v(0).downcast::<String>().unwrap();
                 str.push(*v(1).downcast::<char>().unwrap());
 
                 str
             };
-            (s_string_inner (! "'" "&"))  => |v| {
+            (s_string_inner (! "'" "&"))  => |v, _| {
                 let mut str = v(0).downcast::<String>().unwrap();
                 str.push_str(v(1).downcast::<Token>().unwrap().as_str());
 

@@ -6,14 +6,14 @@ declare_rules! {
         #[import (Hex) as hex]
 
         string {
-            ("\"" string_inner "\"") => |v| v(1);
-            ("\"\"") => |_| String::new().into_value();
+            ("\"" string_inner "\"") => |v, _| v(1);
+            ("\"\"") => |_, _| String::new().into_value();
         }
 
         string_inner {
             (string_char)
             (string_inner string_char)
-                => |v| format!(
+                => |v, _| format!(
                     "{}{}",
                     v(0).downcast::<String>().unwrap(),
                     v(1).downcast::<String>().unwrap()
@@ -23,17 +23,17 @@ declare_rules! {
         string_char {
             (escape)
             ((! "\""))
-                => |v| v(0).downcast::<Token>().unwrap().to_string().into_value();
+                => |v, _| v(0).downcast::<Token>().unwrap().to_string().into_value();
         }
 
         escape {
-            ("\\\"") => |_| "\"".to_owned().into_value();
-            ("\\\\") => |_| "\\".to_owned().into_value();
-            ("\\n") => |_| "\n".to_owned().into_value();
-            ("\\r") => |_| "\r".to_owned().into_value();
-            ("\\t") => |_| "\t".to_owned().into_value();
-            ("\\0") => |_| "\0".to_owned().into_value();
-            ("\\x" (hex::digit) (hex::digit)) => |v| {
+            ("\\\"") => |_, _| "\"".to_owned().into_value();
+            ("\\\\") => |_, _| "\\".to_owned().into_value();
+            ("\\n") => |_, _| "\n".to_owned().into_value();
+            ("\\r") => |_, _| "\r".to_owned().into_value();
+            ("\\t") => |_, _| "\t".to_owned().into_value();
+            ("\\0") => |_, _| "\0".to_owned().into_value();
+            ("\\x" (hex::digit) (hex::digit)) => |v, _| {
                 let digit1 = v(1).downcast::<Token>().unwrap().to_string();
                 let digit2 = v(2).downcast::<Token>().unwrap().to_string();
 
@@ -47,7 +47,7 @@ declare_rules! {
                 }
 
             };
-            ("\\u{" (hex::raw_hex) "}") => |v| {
+            ("\\u{" (hex::raw_hex) "}") => |v, _| {
                 let hex = v(1).downcast::<String>().unwrap();
                 if hex.chars().count() > 6 {
                     panic!("Illegal escape code: \\u{{{hex}}}");

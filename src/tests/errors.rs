@@ -27,7 +27,7 @@ fn transformer_error() {
         #[import (rules::Identifier) as id]
 
         start {
-            ((id::identifier)) => |v| {
+            ((id::identifier)) => |v, _| {
                 let id = v(0).downcast::<String>().unwrap();
 
                 if !ALLOWED_NAMES.contains(&id.as_str()) {

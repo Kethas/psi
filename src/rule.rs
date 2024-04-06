@@ -13,7 +13,7 @@ use super::result::*;
 
 pub type ParseBuffer<'a> = &'a mut dyn FnMut(usize) -> ParseValue;
 
-pub type Transformer = Rc<dyn Fn(ParseBuffer) -> ParseValue>;
+pub type Transformer = Rc<dyn Fn(ParseBuffer, Span) -> ParseValue>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RulePart {
@@ -304,6 +304,9 @@ struct ParseStackItem<'a, 'i, I: Input<'i>> {
     // primarily for debugging
     prev_path: Vec<usize>,
 
+    // for constructing spans
+    span_start: LineInfo,
+
     _phantom: PhantomData<&'i I>,
 }
 
@@ -377,6 +380,11 @@ fn parse<'a, 'i, I: Input<'i>>(
         n: 0,
         prev_path: vec![],
         input,
+        span_start: LineInfo {
+            pos: 0,
+            line: 0,
+            column: 0,
+        },
         _phantom: PhantomData,
     }];
 
@@ -534,6 +542,7 @@ fn parse<'a, 'i, I: Input<'i>>(
                             rule_name: rule.clone(),
                         })?,
                         n: 0,
+                        span_start: top.input.line_info(),
                         input: top.input,
                         prev_path: vec![],
                         _phantom: PhantomData,
@@ -557,6 +566,7 @@ fn parse<'a, 'i, I: Input<'i>>(
                         })?,
                         n: 1,
                         input: top.input,
+                        span_start: top.span_start,
                         prev_path: vec![],
                         _phantom: PhantomData,
                     });
@@ -579,7 +589,14 @@ fn parse<'a, 'i, I: Input<'i>>(
                         value.take().unwrap()
                     };
 
-                    let parse_value = transformer(&mut parse_buffer);
+                    let span = Span {
+                        filename: top.input.filename(),
+                        path: top.input.path(),
+                        start: top.span_start,
+                        end: top.input.line_info(),
+                    };
+
+                    let parse_value = transformer(&mut parse_buffer, span);
 
                     match parse_value.downcast::<Box<dyn Error>>() {
                         Ok(error) => {
@@ -635,6 +652,7 @@ fn parse<'a, 'i, I: Input<'i>>(
                     rule_trees: nexts,
                     n: 0,
                     input,
+                    span_start: top.span_start,
                     prev_path,
                     _phantom: PhantomData,
                 });

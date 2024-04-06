@@ -5,22 +5,22 @@ use super::*;
 declare_rules! {
     pub Integer {
         integer /* isize */ {
-            (unsigned) => |v| (*v(0).downcast::<usize>().unwrap() as isize).into_value();
-            ("+" unsigned) => |v| (*v(1).downcast::<usize>().unwrap() as isize).into_value();
-            ("-" unsigned) => |v| (-(*v(1).downcast::<usize>().unwrap() as isize)).into_value();
+            (unsigned) => |v, _| (*v(0).downcast::<usize>().unwrap() as isize).into_value();
+            ("+" unsigned) => |v, _| (*v(1).downcast::<usize>().unwrap() as isize).into_value();
+            ("-" unsigned) => |v, _| (-(*v(1).downcast::<usize>().unwrap() as isize)).into_value();
         }
 
         unsigned /* usize */ {
-            ("0") => |_| 0_usize.into_value();
+            ("0") => |_, _| 0_usize.into_value();
             (_int)
-                => |v| v(0).downcast::<String>().unwrap().parse::<usize>().unwrap().into_value();
+                => |v, _| v(0).downcast::<String>().unwrap().parse::<usize>().unwrap().into_value();
         }
 
         _int {
             (digit_nonzero)
-                => |v| v(0).downcast::<Token>().unwrap().to_string().into_value();
+                => |v, _| v(0).downcast::<Token>().unwrap().to_string().into_value();
             (_int digit)
-                => |v| format!(
+                => |v, _| format!(
                     "{}{}",
                     v(0).downcast::<String>().unwrap(),
                     v(1).downcast::<Token>().unwrap()

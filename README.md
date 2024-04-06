@@ -71,15 +71,15 @@ let rules = rules!{
     }
 
     list {
-        ("[" list_inner "]") => |v| v(1);
+        ("[" list_inner "]") => |v, _| v(1);
         // Empty list
-        ("[]") => |_| (Vec::<Token>::new()).into_value();
+        ("[]") => |_, _| (Vec::<Token>::new()).into_value();
     }
 
     list_inner {
-        (name) => |v| vec![*v(0).downcast::<Token>().unwrap()].into_value();
+        (name) => |v, _| vec![*v(0).downcast::<Token>().unwrap()].into_value();
 
-        (list_inner "," name) => |v| {
+        (list_inner "," name) => |v, _| {
             let mut vec = v(0).downcast::<Vec<Token>>().unwrap()
             vec.push(*v(2).downcast::<Token>().unwrap());
             vec
@@ -119,11 +119,11 @@ let rules = rules! {
     }
 
     name {
-        ("John") => |_| Name::John.into_value();
-        ("Jane") => |_| Name::Jane.into_value();
-        ("Jeremiah") => |_| Name::Jeremiah.into_value();
-        ("Josh") => |_| Name::Josh.into_value();
-        ("Jimmy") => |_| Name::Jimmy.into_value();
+        ("John") => |_, _| Name::John.into_value();
+        ("Jane") => |_, _| Name::Jane.into_value();
+        ("Jeremiah") => |_, _| Name::Jeremiah.into_value();
+        ("Josh") => |_, _| Name::Josh.into_value();
+        ("Jimmy") => |_, _| Name::Jimmy.into_value();
     }
 };
 ```
@@ -172,7 +172,7 @@ use psi_parser::prelude::*;
 
 let rules = rules! {
     character {
-        ("'" char_inner "'") => |v| v(1)
+        ("'" char_inner "'") => |v, _| v(1)
     }
 
     char_inner {
@@ -229,11 +229,11 @@ pub enum Name {
 declare_rules! {
     pub Names {
         name {
-            ("John") => |_| Name::John.into_value();
-            ("Jane") => |_| Name::Jane.into_value();
-            ("Jeremiah") => |_| Name::Jeremiah.into_value();
-            ("Josh") => |_| Name::Josh.into_value();
-            ("Jimmy") => |_| Name::Jimmy.into_value();
+            ("John") => |_, _| Name::John.into_value();
+            ("Jane") => |_, _| Name::Jane.into_value();
+            ("Jeremiah") => |_, _| Name::Jeremiah.into_value();
+            ("Josh") => |_, _| Name::Josh.into_value();
+            ("Jimmy") => |_, _| Name::Jimmy.into_value();
         }
     }
 }
@@ -277,7 +277,7 @@ let rules = rules! {
     #[import (rules::Identifier) as id]
 
     start {
-        ((id::identifier)) => |v| {
+        ((id::identifier)) => |v, _| {
             let id = v(0).downcast::<String>().unwrap();
 
             if !ALLOWED_NAMES.contains(&id.as_str()) {

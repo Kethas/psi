@@ -86,6 +86,14 @@ impl<'a> Input<'a> for FileInput<'a> {
     fn row_col(&self) -> (usize, usize) {
         (self.row, self.col)
     }
+
+    fn path(&self) -> Option<PathBuf> {
+        Some(self.file.to_path_buf())
+    }
+
+    fn filename(&self) -> Option<String> {
+        self.file.file_name().and_then(|os_str| os_str.to_str()).map(|str| str.to_owned())
+    }
 }
 
 impl<'a> Display for FileInput<'a> {

@@ -18,13 +18,13 @@ fn main() {
         }
 
         list {
-            () => |_| Vec::<Name>::new().into_value();
+            () => |_, _| Vec::<Name>::new().into_value();
             (list_inner)
         }
 
         list_inner {
-            (name) => |v| vec![*v(0).downcast::<Name>().unwrap()].into_value();
-            (list_inner "," name) => |v| {
+            (name) => |v, _| vec![*v(0).downcast::<Name>().unwrap()].into_value();
+            (list_inner "," name) => |v, _| {
                 let mut v0 = v(0).downcast::<Vec<Name>>().unwrap();
                 v0.push(*v(2).downcast().unwrap());
                 v0
@@ -32,11 +32,11 @@ fn main() {
         }
 
         name {
-            ("John") => |_| Name::John.into_value();
-            ("Jane") => |_| Name::Jane.into_value();
-            ("Jeremiah") => |_| Name::Jeremiah.into_value();
-            ("Josh") => |_| Name::Josh.into_value();
-            ("Jimmy") => |_| Name::Jimmy.into_value();
+            ("John") => |_, _| Name::John.into_value();
+            ("Jane") => |_, _| Name::Jane.into_value();
+            ("Jeremiah") => |_, _| Name::Jeremiah.into_value();
+            ("Josh") => |_, _| Name::Josh.into_value();
+            ("Jimmy") => |_, _| Name::Jimmy.into_value();
         }
     };
 

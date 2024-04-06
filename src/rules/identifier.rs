@@ -7,9 +7,9 @@ declare_rules! {
 
         identifier {
             (identifier_start)
-                => |v| v(0).downcast::<Token>().unwrap().to_string().into_value();
+                => |v, _| v(0).downcast::<Token>().unwrap().to_string().into_value();
             (identifier identifier_continue)
-                => |v| format!(
+                => |v, _| format!(
                     "{}{}",
                     v(0).downcast::<String>().unwrap(),
                     v(1).downcast::<Token>().unwrap()

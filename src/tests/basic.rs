@@ -39,7 +39,7 @@ fn aab() {
         start { (aab) }
         aab {
             ("b")
-            ("a" aab) => |v| {
+            ("a" aab) => |v, _| {
                 let v0 = *v(0).downcast::<Token>().unwrap();
                 let v1 = v(1);
 
@@ -145,8 +145,8 @@ fn abc() {
         }
 
         abc {
-            ("a" "b") => |_| Abc::Ab.into_value();
-            ("a" abc "c") => |v| Abc::Ac(v(1).downcast::<Abc>().unwrap()).into_value();
+            ("a" "b") => |_, _| Abc::Ab.into_value();
+            ("a" abc "c") => |v, _| Abc::Ac(v(1).downcast::<Abc>().unwrap()).into_value();
         }
     };
 
@@ -173,8 +173,8 @@ fn xab() {
         }
 
         xab {
-            ("x" "a") => |_| "xa".to_owned().into_value();
-            ((!"a") "b") => |v| format!("{}b", v(0).downcast::<Token>().unwrap()).into_value();
+            ("x" "a") => |_, _| "xa".to_owned().into_value();
+            ((!"a") "b") => |v, _| format!("{}b", v(0).downcast::<Token>().unwrap()).into_value();
         }
     };
 
@@ -201,24 +201,24 @@ fn char_literal() {
         start { (char) }
 
         char /* char */ {
-            ("'" char_inner "'") => |v| v(1);
+            ("'" char_inner "'") => |v, _| v(1);
         }
 
         char_inner /* char */ {
             (char_escape)
-            ((! "'")) => |v| {
+            ((! "'")) => |v, _| {
                 // Take first character
                 v(0).downcast::<Token>().unwrap().chars().next().unwrap().into_value()
             };
         }
 
         char_escape /* char */ {
-            ("\\" "'") => |_| '\''.into_value();
-            ("\\" "n") => |_| '\n'.into_value();
-            ("\\" "r") => |_| '\r'.into_value();
-            ("\\" "t") => |_| '\t'.into_value();
-            ("\\" "\\") => |_| '\\'.into_value();
-            ("\\" "0") => |_| '\0'.into_value();
+            ("\\" "'") => |_, _| '\''.into_value();
+            ("\\" "n") => |_, _| '\n'.into_value();
+            ("\\" "r") => |_, _| '\r'.into_value();
+            ("\\" "t") => |_, _| '\t'.into_value();
+            ("\\" "\\") => |_, _| '\\'.into_value();
+            ("\\" "0") => |_, _| '\0'.into_value();
         }
 
     };
@@ -252,8 +252,8 @@ fn import() {
 
     let boolean_rules = rules! {
         boolean {
-            ("true") => |_| true.into_value();
-            ("false") => |_| false.into_value();
+            ("true") => |_, _| true.into_value();
+            ("false") => |_, _| false.into_value();
         }
     };
 
@@ -290,9 +290,9 @@ fn import2() {
         fn from(_: NamesRules) -> Self {
             rules! {
                 name {
-                    ("John") => |_| "John".to_owned().into_value();
-                    ("James") => |_| "James".to_owned().into_value();
-                    ("Joey") => |_| "Joey".to_owned().into_value();
+                    ("John") => |_, _| "John".to_owned().into_value();
+                    ("James") => |_, _| "James".to_owned().into_value();
+                    ("Joey") => |_, _| "Joey".to_owned().into_value();
                 }
             }
         }
@@ -309,9 +309,9 @@ fn import2() {
         #[import (NamesRules) as names]
 
         greeting {
-            ("Hello " (names::name) "!") => |v| Greeting::Hello(*v(1).downcast::<String>().unwrap()).into_value();
-            ("Hi " (names::name) "!") => |v| Greeting::Hi(*v(1).downcast::<String>().unwrap()).into_value();
-            ("Greetings " (names::name) "!") => |v| Greeting::Greetings(*v(1).downcast::<String>().unwrap()).into_value();
+            ("Hello " (names::name) "!") => |v, _| Greeting::Hello(*v(1).downcast::<String>().unwrap()).into_value();
+            ("Hi " (names::name) "!") => |v, _| Greeting::Hi(*v(1).downcast::<String>().unwrap()).into_value();
+            ("Greetings " (names::name) "!") => |v, _| Greeting::Greetings(*v(1).downcast::<String>().unwrap()).into_value();
         }
     };
 
