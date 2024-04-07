@@ -382,8 +382,8 @@ fn parse<'a, 'i, I: Input<'i>>(
         input,
         span_start: LineInfo {
             pos: 0,
-            line: 0,
-            column: 0,
+            line: 1,
+            column: 1,
         },
         _phantom: PhantomData,
     }];
