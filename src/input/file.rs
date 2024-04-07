@@ -87,12 +87,12 @@ impl<'a> Input<'a> for FileInput<'a> {
         (self.row, self.col)
     }
 
-    fn path(&self) -> Option<PathBuf> {
-        Some(self.file.to_path_buf())
+    fn path(&self) -> Option<&Path> {
+        Some(self.file)
     }
 
-    fn filename(&self) -> Option<String> {
-        self.file.file_name().and_then(|os_str| os_str.to_str()).map(|str| str.to_owned())
+    fn filename(&self) -> Option<&str> {
+        self.file.file_name().and_then(|os_str| os_str.to_str())
     }
 }
 

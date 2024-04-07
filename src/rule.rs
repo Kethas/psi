@@ -590,8 +590,6 @@ fn parse<'a, 'i, I: Input<'i>>(
                     };
 
                     let span = Span {
-                        filename: top.input.filename(),
-                        path: top.input.path(),
                         start: top.span_start,
                         end: top.input.line_info(),
                     };

@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::Path;
 use std::{any::Any, error::Error, fmt::Display};
 
 use derive_more::{Deref, DerefMut, Display};
@@ -131,10 +131,8 @@ pub struct LineInfo {
     pub column: usize,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Span {
-    pub filename: Option<String>,
-    pub path: Option<PathBuf>,
     pub start: LineInfo,
     pub end: LineInfo,
 }
