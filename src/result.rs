@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::{any::Any, error::Error, fmt::Display};
+use std::cmp::Ordering;
 
 use derive_more::{Deref, DerefMut, Display};
 
@@ -131,8 +132,53 @@ pub struct LineInfo {
     pub column: usize,
 }
 
+impl LineInfo {
+    pub fn zero() -> Self {
+        Self {
+            pos: 0,
+            line: 1,
+            column: 1,
+        }
+    }
+}
+
+impl Default for LineInfo {
+    fn default() -> Self {
+        Self::zero()
+    }
+}
+
+impl PartialOrd for LineInfo {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.pos.cmp(&other.pos))
+    }
+}
+
+impl Ord for LineInfo {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.pos.cmp(&other.pos)
+    }
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Span {
     pub start: LineInfo,
     pub end: LineInfo,
+}
+
+impl PartialOrd for Span {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Span {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self.start.cmp(&other.start) {
+            Ordering::Equal => {
+                self.end.cmp(&other.end)
+            }
+            ord => ord
+        }
+    }
 }
