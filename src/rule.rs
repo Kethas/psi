@@ -506,7 +506,7 @@ fn parse<'a, 'i, I: Input<'i>>(
                         }
                     }
 
-                    let step_size = literals.iter().map(|s| s.chars().count()).min().unwrap();
+                    let step_size = 1;
 
                     let mut input = top.input.clone();
                     let mut token = String::new();
