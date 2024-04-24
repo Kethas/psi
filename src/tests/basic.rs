@@ -247,6 +247,90 @@ fn char_literal() {
 }
 
 #[test]
+fn advanced_not() {
+    init();
+
+    #[derive(Eq, PartialEq, Debug)]
+    enum Quotes {
+        OnePair(String),
+        TwoPairs(String),
+        ThreePairs(String),
+    }
+
+    let rules = rules! {
+        start {
+            ("'" _one_pair "'") => |v, _| {
+                let inner = *v(1).downcast::<String>().unwrap();
+
+                Quotes::OnePair(inner).into_value()
+            };
+            ("''" _two_pairs "''") => |v, _| {
+                let inner = *v(1).downcast::<String>().unwrap();
+
+                Quotes::TwoPairs(inner).into_value()
+            };
+            ("'''" _three_pairs "'''") => |v, _| {
+                let inner = *v(1).downcast::<String>().unwrap();
+
+                Quotes::ThreePairs(inner).into_value()
+            };
+        }
+
+        _one_pair {
+            () => |_, _| String::new().into_value();
+            (_one_pair (! "'")) => |v, _| {
+                let str = v(0).downcast::<String>().unwrap();
+                let char = v(1).downcast::<Token>().unwrap();
+
+                format!("{str}{char}").into_value()
+            };
+        }
+
+        _two_pairs {
+            () => |_, _| String::new().into_value();
+            (_two_pairs (! "''")) => |v, _| {
+                let str = v(0).downcast::<String>().unwrap();
+                let char = v(1).downcast::<Token>().unwrap();
+
+                format!("{str}{char}").into_value()
+            };
+        }
+
+        _three_pairs {
+            () => |_, _| String::new().into_value();
+            (_three_pairs (! "'''")) => |v, _| {
+                let str = v(0).downcast::<String>().unwrap();
+                let char = v(1).downcast::<Token>().unwrap();
+
+                format!("{str}{char}").into_value()
+            };
+        }
+    };
+
+    let inputs = [
+        ("''", Quotes::OnePair("".to_owned())),
+        ("' '", Quotes::OnePair(" ".to_owned())),
+        ("''''", Quotes::TwoPairs("".to_owned())),
+        ("'' ' ''", Quotes::TwoPairs(" ' ".to_owned())),
+        ("''''''", Quotes::ThreePairs("".to_owned())),
+        ("''' ' '''", Quotes::ThreePairs(" ' ".to_owned())),
+        ("''' '' '''", Quotes::ThreePairs(" '' ".to_owned())),
+    ];
+
+    for (input, expected_result) in inputs {
+        println!("input: {input}");
+        assert_eq!(
+            expected_result,
+            *rules
+                .parse_entire("start", input)
+                .expect("Should be parsed.")
+                .downcast_ref()
+                .unwrap()
+        );
+    }
+}
+
+#[test]
 fn import() {
     init();
 

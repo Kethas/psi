@@ -4,7 +4,11 @@ declare_rules! {
     pub Float {
         #[import (Integer) as integer]
         float /* f64 */ {
+            (float_only) => |v, _| v(0);
             (_int) => |v, _| v(0).downcast::<String>().unwrap().parse::<f64>().unwrap().into_value();
+        }
+
+        float_only /* f64 */ {
             (digits "." digits)
                 => |v, _| format!(
                     "{}.{}",
